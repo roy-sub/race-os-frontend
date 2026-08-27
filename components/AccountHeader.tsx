@@ -1,0 +1,120 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+import { Mark } from "./Mark";
+import { MediaPlaceholder } from "./MediaPlaceholder";
+import { routes } from "@/lib/routes";
+
+const NAV = [
+  { href: routes.courseRecon, label: "Course recon", key: "courseRecon" },
+  { href: routes.racePlan, label: "Race plan", key: "racePlan" },
+  { href: routes.pricing, label: "Pricing", key: "pricing" },
+  { href: routes.dashboard, label: "Dashboard", key: "dashboard" },
+  { href: routes.myPlans, label: "My plans", key: "myPlans" },
+  { href: routes.settings, label: "Settings", key: "settings" },
+] as const;
+
+export type AccountAlert = { title: string; body: string; when: string; color: string };
+
+type AccountHeaderProps = {
+  active?: (typeof NAV)[number]["key"];
+  alerts?: AccountAlert[];
+  name?: string;
+  roleLabel?: string;
+};
+
+/** Sticky signed-in header shared by every app-side page: search, alerts bell, account. */
+export function AccountHeader({ active, alerts = [], name = "Elena Marsh", roleLabel = "RACE PLAN" }: AccountHeaderProps) {
+  const [alertsOpen, setAlertsOpen] = useState(false);
+
+  return (
+    <header style={{ position: "sticky", top: 0, zIndex: 70, background: "rgba(241,238,232,.92)", backdropFilter: "blur(14px)", borderBottom: "1px solid rgba(21,20,15,.10)" }}>
+      <div style={{ maxWidth: 1360, margin: "0 auto", padding: "0 56px", height: 68, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 40 }}>
+        <Link href={routes.home} style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          <Mark />
+          <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-.035em" }}>RaceOS</span>
+        </Link>
+        <nav style={{ display: "flex", alignItems: "center", gap: 34, fontSize: 14, fontWeight: 500, color: "#5C574B", whiteSpace: "nowrap" }}>
+          {NAV.map((item) => (
+            <Link key={item.key} href={item.href} style={{ color: item.key === active ? "#15140F" : "#5C574B" }}>
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, height: 34, padding: "0 12px", border: "1px solid rgba(21,20,15,.14)", borderRadius: 6, width: 196, background: "rgba(255,255,255,.5)" }}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flex: "none" }}>
+              <circle cx="7" cy="7" r="4.6" stroke="#8C8578" strokeWidth="1.5" />
+              <path d="M10.6 10.6 14 14" stroke="#8C8578" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search races, bags, cut-offs"
+              style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", fontFamily: "Switzer,Helvetica,Arial,sans-serif", fontSize: 12.5, color: "#15140F", padding: 0 }}
+            />
+            <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".08em", color: "#A8A192", flex: "none" }}>⌘K</span>
+          </div>
+          <div style={{ position: "relative" }}>
+            <div
+              onClick={() => setAlertsOpen((o) => !o)}
+              style={{
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 34,
+                height: 34,
+                border: `1px solid ${alertsOpen ? "rgba(21,20,15,.3)" : "rgba(21,20,15,.14)"}`,
+                borderRadius: 6,
+                cursor: "pointer",
+                background: alertsOpen ? "rgba(21,20,15,.06)" : "rgba(255,255,255,.5)",
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <path d="M4 6.5a4 4 0 0 1 8 0c0 3 .9 4.3 1.4 4.8.3.3.1.7-.3.7H2.9c-.4 0-.6-.4-.3-.7C3.1 10.8 4 9.5 4 6.5Z" stroke="#5C574B" strokeWidth="1.4" />
+                <path d="M6.6 14a1.6 1.6 0 0 0 2.8 0" stroke="#5C574B" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+              {alerts.length > 0 && (
+                <span
+                  className="mono"
+                  style={{
+                    position: "absolute", top: -5, right: -5, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8,
+                    background: "#E4622F", color: "#fff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #F1EEE8",
+                  }}
+                >
+                  {alerts.length}
+                </span>
+              )}
+            </div>
+            {alertsOpen && (
+              <div style={{ position: "absolute", top: 44, right: 0, width: 330, background: "#FBF8F2", border: "1px solid rgba(21,20,15,.1)", borderRadius: 10, boxShadow: "0 24px 60px -28px rgba(21,20,15,.4)", overflow: "hidden", zIndex: 90 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid rgba(21,20,15,.08)" }}>
+                  <span className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#8C8578" }}>ALERTS</span>
+                  <span onClick={() => setAlertsOpen(false)} className="mono link-accent" style={{ fontSize: 14, color: "#A8A192", cursor: "pointer", lineHeight: 1 }}>×</span>
+                </div>
+                {alerts.map((a) => (
+                  <div key={a.title} className="row-hover-faint" style={{ display: "flex", gap: 12, padding: "16px 18px", borderBottom: "1px solid rgba(21,20,15,.06)", cursor: "pointer" }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: a.color, marginTop: 6, flex: "none" }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, letterSpacing: "-.015em" }}>{a.title}</div>
+                      <div style={{ fontSize: 12.5, lineHeight: 1.45, color: "#8C8578", marginTop: 4 }}>{a.body}</div>
+                      <div className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "#B8B1A2", marginTop: 7 }}>{a.when}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 16, borderLeft: "1px solid rgba(21,20,15,.12)" }}>
+            <MediaPlaceholder path="assets/account/elena.jpg" background="#D8D0C2" style={{ width: 30, height: 30, borderRadius: "50%", flex: "none" }} />
+            <div style={{ lineHeight: 1.15 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-.01em" }}>{name}</div>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#8C8578", marginTop: 2 }}>{roleLabel}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
