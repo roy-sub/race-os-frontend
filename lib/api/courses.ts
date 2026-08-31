@@ -137,6 +137,34 @@ export type Recon = {
   terrain_pmtiles_key: string | null;
 };
 
+/**
+ * The free cut-off calculator's answer.
+ *
+ * Hand-typed for the same reason as `Recon`: the endpoint is annotated
+ * `dict[str, object]` backend-side, so the generated client sees nothing.
+ *
+ * This is **not** a solve, and `basis` says so in the API's own words — it is
+ * straight-line arithmetic over the published limits, which is the right answer
+ * to "am I near a cut-off?" for someone deciding whether to enter.
+ */
+export type CutoffBarrier = {
+  name: string;
+  leg: Leg;
+  limit_minutes: number;
+  estimated_eta_minutes: number;
+  margin_minutes: number;
+  at_risk: boolean;
+  basis: string;
+};
+
+export type CutoffCheck = {
+  course_ref: string;
+  bundle_version: string;
+  projected_minutes: number;
+  barriers: CutoffBarrier[];
+  at_risk_count: number;
+};
+
 export function useCourses(params: { dist?: DistanceType | null; q?: string | null } = {}) {
   return useQuery({
     queryKey: queryKeys.courses.list({ dist: params.dist ?? null, q: params.q ?? null }),
