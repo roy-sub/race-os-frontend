@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Mark } from "@/components/Mark";
 import { routes } from "@/lib/routes";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 import {
   C_DOT, CONF_COLOR, COURSES, INCIDENTS, KPIS, LAT_TICKS, P50_PATH, P95_PATH, P99_PATH,
   P_STYLE, QUEUE, REPORTS, SERVICES, SLA_LABEL_Y, SLA_Y, T_STYLE, USERS, USER_STATS,
@@ -18,7 +19,7 @@ const TABS: { k: Tab; n: string; badge?: string }[] = [
 const RANGES = ["7d", "30d", "90d"] as const;
 const COURSE_FILTERS = ["All", "Pending", "Stale", "Unverified"] as const;
 
-export default function AdminPage() {
+function AdminPage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [range, setRange] = useState<(typeof RANGES)[number]>("30d");
   const [filter, setFilter] = useState<(typeof COURSE_FILTERS)[number]>("All");
@@ -351,5 +352,14 @@ export default function AdminPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function GuardedAdminPage() {
+  return (
+    <GuardedPage>
+      <AdminPage />
+    </GuardedPage>
   );
 }

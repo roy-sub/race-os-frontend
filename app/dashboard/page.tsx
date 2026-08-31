@@ -7,6 +7,7 @@ import { Footer } from "@/components/Footer";
 import { Reveal } from "@/components/Reveal";
 import { MediaPlaceholder } from "@/components/MediaPlaceholder";
 import { routes } from "@/lib/routes";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 import {
   ALERTS,
   BAG_DATA,
@@ -25,7 +26,7 @@ import {
   toPath,
 } from "@/lib/dashboard";
 
-export default function DashboardPage() {
+function DashboardPage() {
   const geom = useMemo(() => buildGeom(), []);
 
   const [raceIdx, setRaceIdx] = useState(0);
@@ -696,5 +697,14 @@ export default function DashboardPage() {
         <Footer />
       </div>
     </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function GuardedDashboardPage() {
+  return (
+    <GuardedPage>
+      <DashboardPage />
+    </GuardedPage>
   );
 }

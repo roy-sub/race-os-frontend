@@ -6,6 +6,7 @@ import { AccountHeader } from "@/components/AccountHeader";
 import { Reveal } from "@/components/Reveal";
 import { routes } from "@/lib/routes";
 import { CARD_BLOCKS, EXPORTS, PLANS, type PlanState } from "@/lib/myPlans";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 
 const HREF_MAP: Record<string, string> = {
   racePlan: routes.racePlan,
@@ -17,7 +18,7 @@ const MARGIN_COLOR = { clear: "#3E7B55", tight: "#A0701A", none: "#A8A192" } as 
 
 const FILTERS = ["All", "Active", "Draft", "Past", "Shared"] as const;
 
-export default function MyPlansPage() {
+function MyPlansPage() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"list" | "grid">("list");
@@ -269,5 +270,14 @@ export default function MyPlansPage() {
         )
       )}
     </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function GuardedMyPlansPage() {
+  return (
+    <GuardedPage>
+      <MyPlansPage />
+    </GuardedPage>
   );
 }

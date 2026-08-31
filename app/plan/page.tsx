@@ -5,6 +5,7 @@ import { AccountHeader } from "@/components/AccountHeader";
 import { Reveal } from "@/components/Reveal";
 import { MediaPlaceholder } from "@/components/MediaPlaceholder";
 import { routes } from "@/lib/routes";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 import {
   AID_PLAN,
   AID_TICKS,
@@ -56,7 +57,7 @@ function WhyButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-export default function RacePlanPage() {
+function RacePlanPage() {
   const [tab, setTab] = useState("feas");
   const [drawerKey, setDrawerKey] = useState<ConstraintKey | null>(null);
   const [bagIdx, setBagIdx] = useState(1);
@@ -678,5 +679,14 @@ export default function RacePlanPage() {
         </div>
       </footer>
     </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function GuardedRacePlanPage() {
+  return (
+    <GuardedPage>
+      <RacePlanPage />
+    </GuardedPage>
   );
 }

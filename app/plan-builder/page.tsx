@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Mark } from "@/components/Mark";
 import { routes } from "@/lib/routes";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 import {
   RACE_RESULTS,
   SEG,
@@ -47,7 +48,7 @@ const INITIAL: State = {
   bag: 1, qty: {},
 };
 
-export default function PlanBuilderPage() {
+function PlanBuilderPage() {
   const [st, setSt] = useState<State>(INITIAL);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const el = useMemo(() => buildElevation(), []);
@@ -904,5 +905,14 @@ export default function PlanBuilderPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function GuardedPlanBuilderPage() {
+  return (
+    <GuardedPage>
+      <PlanBuilderPage />
+    </GuardedPage>
   );
 }

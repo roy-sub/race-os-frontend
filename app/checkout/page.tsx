@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Mark } from "@/components/Mark";
 import { routes } from "@/lib/routes";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 
 const METHODS = ["Card", "Apple Pay", "PayPal"];
 
@@ -32,7 +33,7 @@ const TIMELINE = [
 const fieldBox: React.CSSProperties = { display: "flex", alignItems: "center", height: 48, marginTop: 11, padding: "0 15px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff" };
 const fieldLabel: React.CSSProperties = { fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: ".15em", color: "#8C8578", marginTop: 24 };
 
-export default function CheckoutPage() {
+function CheckoutPage() {
   const [method, setMethod] = useState("Card");
   const [terms, setTerms] = useState(true);
   const [paying, setPaying] = useState(false);
@@ -262,5 +263,14 @@ export default function CheckoutPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function GuardedCheckoutPage() {
+  return (
+    <GuardedPage>
+      <CheckoutPage />
+    </GuardedPage>
   );
 }
