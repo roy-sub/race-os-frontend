@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "api:pull": "node scripts/pull-openapi.mjs",
     "api:types": "openapi-typescript openapi/openapi.json -o lib/api/schema.d.ts",
-    "api:sync": "npm run api:pull && npm run api:types"
+    "api:sync": "npm run api:pull && npm run api:types",
+    "deploy": "next build && wrangler pages deploy out --project-name=${CF_PAGES_PROJECT:-raceos}"
   },
   "dependencies": {
     "@stripe/stripe-js": "^5.10.0",
@@ -28,6 +29,7 @@
     "eslint-config-next": "16.3.3",
     "openapi-typescript": "^7.13.0",
     "playwright": "^1.62.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.127.1"
   }
 }

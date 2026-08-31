@@ -10,6 +10,7 @@
  * how a reload ends up looking broken.
  */
 
+import { Suspense } from "react";
 import { RequireAuth } from "./RequireAuth";
 
 function CheckingSession() {
@@ -41,5 +42,13 @@ function CheckingSession() {
 }
 
 export function GuardedPage({ children }: { children: React.ReactNode }) {
-  return <RequireAuth fallback={<CheckingSession />}>{children}</RequireAuth>;
+  // `RequireAuth` reads the query string so it can send the athlete back to the
+  // exact page they asked for, and `useSearchParams` needs a Suspense boundary
+  // for the static export to prerender the shell. Putting it here means every
+  // guarded page gets one without each having to remember.
+  return (
+    <Suspense fallback={<CheckingSession />}>
+      <RequireAuth fallback={<CheckingSession />}>{children}</RequireAuth>
+    </Suspense>
+  );
 }

@@ -45,10 +45,17 @@ export function RequireAuth({
   const { status } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const search = useSearchParams();
 
   useEffect(() => {
-    if (status === "anonymous") router.replace(loginHref(pathname));
-  }, [status, router, pathname]);
+    if (status !== "anonymous") return;
+    // The query string is part of where they were going, not decoration:
+    // /plan/?plan=<id> without its query is just an empty plan page. This is
+    // built from `pathname` plus `search` rather than `location.href` so it
+    // stays a same-origin path by construction.
+    const query = search.toString();
+    router.replace(loginHref(query ? `${pathname}?${query}` : pathname));
+  }, [status, router, pathname, search]);
 
   if (status === "authenticated") return <>{children}</>;
   return <>{fallback}</>;
