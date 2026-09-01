@@ -6,12 +6,13 @@ import { Mark } from "@/components/Mark";
 import { MediaPlaceholder } from "@/components/MediaPlaceholder";
 import { Reveal } from "@/components/Reveal";
 import { routes } from "@/lib/routes";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 import {
   ACTIONS, CALIBRATION, CONFIDENCE, SEASONS, SEASON_STATS,
   accuracyBars, carbChart, compareRows, historyRows, runChart,
 } from "@/lib/postRace";
 
-export default function PostRacePage() {
+function PostRacePage() {
   const [view, setView] = useState<"race" | "season">("race");
   const [season, setSeason] = useState<(typeof SEASONS)[number]>("2025");
   const [hover, setHover] = useState(5);
@@ -306,5 +307,14 @@ export default function PostRacePage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function GuardedPostRacePage() {
+  return (
+    <GuardedPage>
+      <PostRacePage />
+    </GuardedPage>
   );
 }

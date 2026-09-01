@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Mark } from "@/components/Mark";
 import { routes } from "@/lib/routes";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 
 type Level = "first" | "improver" | "experienced";
 
@@ -20,7 +21,7 @@ const RACES_ALL = [
   { name: "Cala Olympic", date: "18 Oct 2026", dist: "Olympic", prov: "CROWD-VERIFIED", official: false },
 ];
 
-export default function OnboardingPage() {
+function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [level, setLevel] = useState<Level>("first");
   const [dist, setDist] = useState("Olympic");
@@ -279,5 +280,14 @@ export default function OnboardingPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function GuardedOnboardingPage() {
+  return (
+    <GuardedPage>
+      <OnboardingPage />
+    </GuardedPage>
   );
 }

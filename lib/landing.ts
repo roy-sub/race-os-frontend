@@ -1,6 +1,11 @@
-// Pure data + math for the Landing page's live solver, course canvas and bag
-// rail — ported 1:1 from the Claude Design prototype's Component class so the
-// same numbers (splits, cut-off margins, fuelling) come out of React state.
+// Landing-page copy: the bag rail and the FAQ.
+//
+// The course canvas no longer lives here — it reads real geometry from
+// GET /courses/{ref}/recon, so the synthetic route loop and sine-wave
+// elevation this module used to export are gone.
+//
+// What remains is illustrative marketing content for the landing page's demo,
+// not data any product screen reads.
 
 export type CutoffRow = { name: string; limit: number; eta: number };
 
@@ -8,32 +13,6 @@ export function fmtClock(m: number): string {
   const s = m < 0 ? "-" : "";
   const mm = Math.abs(Math.round(m));
   return s + Math.floor(mm / 60) + ":" + String(mm % 60).padStart(2, "0");
-}
-
-/** Synthetic elevation profile for the bike leg (320 samples, metres). */
-export function buildElevation(): number[] {
-  const n = 320;
-  const p: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1);
-    let h = 60 + 40 * Math.sin(t * 5.1 + 0.4) + 22 * Math.sin(t * 11.3 + 1.9) + 10 * Math.sin(t * 23.7);
-    h += 430 * Math.exp(-Math.pow((t - 0.3) / 0.075, 2));
-    h += 560 * Math.exp(-Math.pow((t - 0.55) / 0.065, 2));
-    h += 300 * Math.exp(-Math.pow((t - 0.78) / 0.055, 2));
-    p.push(Math.max(2, h));
-  }
-  return p;
-}
-
-/** Synthetic route loop for the bike leg (261 points, canvas coordinates). */
-export function buildRoute(): [number, number][] {
-  const p: [number, number][] = [];
-  for (let i = 0; i <= 260; i++) {
-    const a = (i / 260) * Math.PI * 2;
-    const r = 1 + 0.26 * Math.sin(3 * a + 0.6) + 0.15 * Math.sin(5 * a + 2.1) + 0.07 * Math.sin(8 * a + 4.4);
-    p.push([640 + r * 380 * Math.cos(a), 140 + r * 96 * Math.sin(a)]);
-  }
-  return p;
 }
 
 export type BagItem = { name: string; qty: string; note: string };
@@ -131,6 +110,6 @@ export const FAQS = [
   },
   {
     q: "My race is not in the directory.",
-    a: "Upload a GPX and enter the cut-offs. The plan still solves, and anything estimated is marked — including on the printed card.",
+    a: "Then we cannot solve it yet. A plan is built against a real bundle — surveyed route, real elevation, published cut-offs — and we would rather say no than solve against a guess.",
   },
 ];

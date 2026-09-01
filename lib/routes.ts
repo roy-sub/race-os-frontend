@@ -24,3 +24,16 @@ export const routes = {
   sharedPlan: "/shared",
   systemStates: "/system-states",
 } as const;
+
+/**
+ * A course's recon page.
+ *
+ * The slug travels as a query parameter rather than a path segment because the
+ * site is a static export: a dynamic segment would have to be enumerable at
+ * build time, and the only way to enumerate courses is to ask the backend —
+ * which would make every build depend on it being up, and would mean hardcoding
+ * the slug list the day it is not.
+ */
+export function courseReconHref(slug: string): string {
+  return `${routes.courseRecon}?course=${encodeURIComponent(slug)}`;
+}

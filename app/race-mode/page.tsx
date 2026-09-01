@@ -5,12 +5,13 @@ import Link from "next/link";
 import { Mark } from "@/components/Mark";
 import { Reveal } from "@/components/Reveal";
 import { routes } from "@/lib/routes";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 import {
   ACTION_BG, ACTION_BORDER, ACTION_COLOR, CACHED, CONSTRAINTS, NAV_BTNS, NEVERS,
   PHASES, PRINCIPLES, STATUS_COLOR,
 } from "@/lib/raceMode";
 
-export default function RaceModePage() {
+function RaceModePage() {
   const [phase, setPhase] = useState(2);
   const p = PHASES[phase];
   const statusFg = STATUS_COLOR[p.statusState];
@@ -192,5 +193,14 @@ export default function RaceModePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function GuardedRaceModePage() {
+  return (
+    <GuardedPage>
+      <RaceModePage />
+    </GuardedPage>
   );
 }

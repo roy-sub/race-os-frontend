@@ -5,6 +5,8 @@ import { useState } from "react";
 import { Mark } from "./Mark";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { routes } from "@/lib/routes";
+import { useAuth } from "@/lib/auth/AuthProvider";
+import { Skeleton } from "./Skeleton";
 
 const NAV = [
   { href: routes.courseRecon, label: "Course recon", key: "courseRecon" },
@@ -20,13 +22,24 @@ export type AccountAlert = { title: string; body: string; when: string; color: s
 type AccountHeaderProps = {
   active?: (typeof NAV)[number]["key"];
   alerts?: AccountAlert[];
-  name?: string;
   roleLabel?: string;
 };
 
-/** Sticky signed-in header shared by every app-side page: search, alerts bell, account. */
-export function AccountHeader({ active, alerts = [], name = "Elena Marsh", roleLabel = "RACE PLAN" }: AccountHeaderProps) {
+/**
+ * Sticky signed-in header shared by every app-side page: search, alerts bell,
+ * account.
+ *
+ * The name is whoever is actually signed in, from `GET /auth/me` by way of the
+ * auth context — not a prop, so no page can pass the wrong one.
+ */
+export function AccountHeader({ active, alerts = [], roleLabel = "RACE PLAN" }: AccountHeaderProps) {
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { user, status, signOut } = useAuth();
+
+  // An account with no display name is normal — `name` is optional at signup —
+  // so the email is the fallback rather than an invented placeholder.
+  const displayName = user?.name?.trim() || user?.email || null;
 
   return (
     <header style={{ position: "sticky", top: 0, zIndex: 70, background: "rgba(241,238,232,.92)", backdropFilter: "blur(14px)", borderBottom: "1px solid rgba(21,20,15,.10)" }}>
@@ -106,12 +119,31 @@ export function AccountHeader({ active, alerts = [], name = "Elena Marsh", roleL
               </div>
             )}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 16, borderLeft: "1px solid rgba(21,20,15,.12)" }}>
-            <MediaPlaceholder path="assets/account/elena.jpg" background="#D8D0C2" style={{ width: 30, height: 30, borderRadius: "50%", flex: "none" }} />
-            <div style={{ lineHeight: 1.15 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-.01em" }}>{name}</div>
-              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#8C8578", marginTop: 2 }}>{roleLabel}</div>
+          <div style={{ position: "relative", paddingLeft: 16, borderLeft: "1px solid rgba(21,20,15,.12)" }}>
+            <div
+              onClick={() => displayName && setMenuOpen((o) => !o)}
+              style={{ display: "flex", alignItems: "center", gap: 10, cursor: displayName ? "pointer" : "default" }}
+            >
+              <MediaPlaceholder path="assets/account/avatar.jpg" background="#D8D0C2" style={{ width: 30, height: 30, borderRadius: "50%", flex: "none" }} />
+              <div style={{ lineHeight: 1.15 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-.01em" }}>
+                  {displayName ?? (status === "loading" ? <Skeleton width={96} height={12} /> : "Signed out")}
+                </div>
+                <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#8C8578", marginTop: 2 }}>{roleLabel}</div>
+              </div>
             </div>
+            {menuOpen && (
+              <div style={{ position: "absolute", top: 46, right: 0, minWidth: 180, background: "#FBF8F2", border: "1px solid rgba(21,20,15,.1)", borderRadius: 10, boxShadow: "0 24px 60px -28px rgba(21,20,15,.4)", overflow: "hidden", zIndex: 90 }}>
+                <Link href={routes.settings} onClick={() => setMenuOpen(false)} className="row-hover-faint" style={{ display: "block", padding: "12px 16px", fontSize: 13.5, color: "#15140F" }}>Settings</Link>
+                <div
+                  onClick={() => { setMenuOpen(false); void signOut(); }}
+                  className="row-hover-faint"
+                  style={{ padding: "12px 16px", fontSize: 13.5, color: "#15140F", cursor: "pointer", borderTop: "1px solid rgba(21,20,15,.06)" }}
+                >
+                  Sign out
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

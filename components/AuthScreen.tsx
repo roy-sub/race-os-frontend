@@ -1,90 +1,188 @@
 "use client";
 
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Mark } from "./Mark";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { CountUp } from "./CountUp";
 import { routes } from "@/lib/routes";
+import { client, unwrap } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/errors";
+import { useCourses } from "@/lib/api/courses";
+import { useAuth } from "@/lib/auth/AuthProvider";
+import { useAuthProviders } from "@/lib/auth/useProviders";
+import { safeNextPath } from "@/lib/auth/RequireAuth";
 
-type Mode = "signup" | "login" | "forgot" | "sent" | "reset" | "expired" | "verify";
+/**
+ * `forgot`, `sent` and `reset` stay implemented and are deliberately
+ * unreachable from the UI: V1 sends no outbound email, so a "check your inbox"
+ * screen would be a lie. The entry point comes back the day the backend can
+ * actually send the link.
+ *
+ * `verify-pending` is the same idea in reverse — signup auto-verifies today, so
+ * the holding page is skipped by checking the user the API returns rather than
+ * by a flag the frontend has to know about. Turn verification on backend-side
+ * and `email_verified_at` arrives null, and the page appears on its own.
+ */
+type Mode = "signup" | "login" | "forgot" | "sent" | "reset" | "expired" | "verify" | "verify-pending";
 
-const OAUTH = [
-  { name: "Continue with Apple", tone: "#15140F" },
-  { name: "Continue with Google", tone: "#C4BCAC" },
-];
-
-const JUMPS: { name: string; k: Mode }[] = [
-  { name: "SIGNUP", k: "signup" },
-  { name: "LOGIN", k: "login" },
-  { name: "FORGOT", k: "forgot" },
-  { name: "SENT", k: "sent" },
-  { name: "RESET", k: "reset" },
-  { name: "EXPIRED", k: "expired" },
-  { name: "VERIFIED", k: "verify" },
-];
+/** The API's own minimum. The prototype said 8 in one place and 12 in another. */
+const MIN_PASSWORD = 10;
 
 const fieldLabel = { fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: ".15em", color: "#8C8578" } as const;
 
 export default function AuthScreen({ initialMode = "signup" }: { initialMode?: Mode }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { signIn, signUp, status } = useAuth();
+  const providers = useAuthProviders();
+  const courses = useCourses();
+
   const [mode, setMode] = useState<Mode>(initialMode);
-  const [email, setEmail] = useState("elena.marsh@gmail.com");
-  const [pw, setPw] = useState("tramuntana26");
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [reveal, setReveal] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [loginError, setLoginError] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
 
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const intended = safeNextPath(searchParams.get("next"));
+
+  /**
+   * True once this screen has started a sign-in or sign-up of its own.
+   *
+   * `signIn`/`signUp` flip `status` to `"authenticated"` the moment the token
+   * lands, which would otherwise trip the redirect below and race the
+   * navigation `submit` is about to make — sending a new account to the
+   * dashboard instead of onboarding, and dragging anyone who still needs to
+   * confirm their email off the holding page. So the effect handles only the
+   * other case: arriving here already signed in.
+   */
+  const selfInitiated = useRef(false);
+
+  useEffect(() => {
+    if (status === "authenticated" && !selfInitiated.current) {
+      router.replace(intended ?? routes.dashboard);
+    }
+  }, [status, router, intended]);
 
   const emailOk = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email);
   const emailBad = email.length > 3 && !emailOk;
   const n = pw.length;
-  const strength = n === 0 ? 0 : n < 8 ? 1 : n < 12 ? 2 : /[^a-z]/i.test(pw) ? 4 : 3;
+  const strength = n === 0 ? 0 : n < MIN_PASSWORD ? 1 : n < 14 ? 2 : /[^a-z]/i.test(pw) ? 4 : 3;
   const sCol = ["rgba(21,20,15,.1)", "#C0392B", "#E0A33C", "#5C9E72", "#3E7B55"][strength];
   const sLab = ["", "TOO SHORT", "FAIR", "STRONG", "VERY STRONG"][strength];
 
-  const go = (m: Mode) => { setMode(m); setBusy(false); setLoginError(false); };
+  const go = (m: Mode) => { setMode(m); setBusy(false); setError(null); };
 
-  const submit = () => {
+  const submit = async () => {
     if (busy) return;
-    if (mode === "signup" && !emailOk) return;
-    if (mode === "reset" && (pw2 !== pw || n < 10)) return;
-    setBusy(true);
-    timer.current = setTimeout(() => {
-      if (mode === "signup") { setBusy(false); setMode("verify"); }
-      else if (mode === "forgot") { setBusy(false); setMode("sent"); }
-      else if (mode === "reset") { setBusy(false); setMode("verify"); }
-      else { setBusy(false); setLoginError((e) => !e); }
-    }, 1200);
+    setError(null);
+    selfInitiated.current = true;
+
+    try {
+      if (mode === "signup") {
+        if (!emailOk || n < MIN_PASSWORD) return;
+        setBusy(true);
+        const user = await signUp({ email, password: pw });
+        // Auto-verified today, so this lands straight on onboarding. The
+        // holding page is one flipped backend flag away, not a rebuild.
+        if (user.email_verified_at) router.replace(intended ?? routes.onboarding);
+        else setMode("verify-pending");
+        return;
+      }
+
+      if (mode === "login") {
+        setBusy(true);
+        await signIn({ email, password: pw });
+        router.replace(intended ?? routes.dashboard);
+        return;
+      }
+
+      if (mode === "forgot") {
+        setBusy(true);
+        // Always 202, whether or not the address exists — anything else turns
+        // this into an account enumerator.
+        await client.POST("/api/v1/auth/forgot-password", { body: { email } });
+        setMode("sent");
+        return;
+      }
+
+      if (mode === "reset") {
+        const token = searchParams.get("token");
+        if (!token || pw2 !== pw || n < MIN_PASSWORD) return;
+        setBusy(true);
+        await unwrap(
+          client.POST("/api/v1/auth/reset-password", { body: { token, new_password: pw } }),
+        );
+        await signIn({ email, password: pw });
+        router.replace(routes.dashboard);
+        return;
+      }
+    } catch (caught) {
+      // Every typed value survives: nothing above clears `email` or `pw`, so a
+      // failed attempt costs one click, not a retyped form.
+      if (caught instanceof ApiError) {
+        setError(caught);
+        if (caught.code === "NOT_FOUND" || caught.code === "INVALID_INPUT") {
+          if (mode === "reset") setMode("expired");
+        }
+      } else {
+        selfInitiated.current = false;
+        throw caught;
+      }
+      selfInitiated.current = false;
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const canSubmit = mode !== "signup" || (emailOk && n >= 10);
+  const canSubmit = mode !== "signup" || (emailOk && n >= MIN_PASSWORD);
   const subLabel = busy
     ? mode === "login" ? "Checking…" : mode === "forgot" ? "Sending…" : "Creating account…"
     : mode === "login" ? "Log in" : mode === "forgot" ? "Send reset link" : "Create free account";
-  const resetOk = pw2 === pw && n >= 10;
+  const resetOk = pw2 === pw && n >= MIN_PASSWORD;
 
-  const OAuthButtons = (
+  /**
+   * Rendered from the API's array, so V1 shows nothing at all. The divider goes
+   * with them — "OR WITH EMAIL" with no alternative above it is nonsense.
+   */
+  const providerRows = providers.data ?? [];
+  const OAuthButtons = providerRows.length > 0 ? (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: mode === "signup" ? 30 : 28 }}>
-      {OAUTH.map((o) => (
-        <div key={o.name} className="row-hover-border" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 11, height: 48, border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff", cursor: "pointer", fontSize: 15, fontWeight: 500, letterSpacing: "-.015em" }}>
-          <span style={{ width: 17, height: 17, borderRadius: 4, background: o.tone, flex: "none" }} />{o.name}
+      {providerRows.map((o) => (
+        <div key={o.id} className="row-hover-border" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 11, height: 48, border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff", cursor: "pointer", fontSize: 15, fontWeight: 500, letterSpacing: "-.015em" }}>
+          <span style={{ width: 17, height: 17, borderRadius: 4, background: o.tone ?? "#C4BCAC", flex: "none" }} />{o.name}
         </div>
       ))}
     </div>
-  );
+  ) : null;
 
-  const OrDivider = (
+  const OrDivider = providerRows.length > 0 ? (
     <div style={{ display: "flex", alignItems: "center", gap: 16, margin: "26px 0" }}>
       <span style={{ flex: 1, height: 1, background: "rgba(21,20,15,.12)" }} />
       <span className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#A8A192" }}>OR WITH EMAIL</span>
       <span style={{ flex: 1, height: 1, background: "rgba(21,20,15,.12)" }} />
     </div>
-  );
+  ) : <div style={{ height: mode === "signup" ? 30 : 28 }} />;
 
   const Spinner = <span style={{ display: "block", width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,.3)", borderTopColor: "#fff", animation: "spin .8s linear infinite", flex: "none" }} />;
+
+  /** The server's sentence, verbatim. It knows how many attempts are left; we do not. */
+  const ErrorNote = error ? (
+    <div role="alert" style={{ display: "flex", alignItems: "flex-start", gap: 11, marginTop: 24, padding: "15px 17px", borderRadius: 9, background: "rgba(192,57,43,.08)", border: "1px solid rgba(192,57,43,.3)" }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#C0392B", flex: "none", marginTop: 6 }} />
+      <div>
+        <div style={{ fontSize: 14, lineHeight: 1.5, color: "#3D3A31" }}>{error.message}</div>
+        {error.requestId && (
+          <div className="mono" style={{ fontSize: 9, letterSpacing: ".12em", color: "#A8A192", marginTop: 7 }}>REQUEST ID · {error.requestId}</div>
+        )}
+      </div>
+    </div>
+  ) : null;
+
+  const courseCount = courses.data?.meta.total;
 
   return (
     <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320, display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.06fr)" }}>
@@ -100,16 +198,18 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
           <div style={{ fontSize: 44, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em", color: "#FBF8F2", maxWidth: 400 }}>Nobody fails at this on fitness.</div>
           <div style={{ fontSize: 16, lineHeight: 1.5, color: "rgba(255,255,255,.6)", maxWidth: 360, marginTop: 16 }}>They fail on logistics, a fuelling number nobody checked, and a cut-off they never modelled.</div>
           <div style={{ display: "flex", gap: 40, marginTop: 38, paddingTop: 26, borderTop: "1px solid rgba(255,255,255,.14)" }}>
-            {[
-              { v: 412, dec: 0, suffix: "", label: "COURSES" },
-              { v: 3.1, dec: 1, suffix: "s", label: "MEDIAN SOLVE" },
-              { v: 5, dec: 0, suffix: "", label: "BAGS PACKED" },
-            ].map((s) => (
-              <div key={s.label}>
-                <div className="mono" style={{ fontSize: 24, letterSpacing: "-.03em", color: "#FBF8F2" }}><CountUp value={s.v} decimals={s.dec} suffix={s.suffix} /></div>
-                <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "rgba(255,255,255,.4)", marginTop: 7 }}>{s.label}</div>
+            <div>
+              <div className="mono" style={{ fontSize: 24, letterSpacing: "-.03em", color: "#FBF8F2", minWidth: "2ch" }}>
+                {courseCount === undefined
+                  ? <span style={{ opacity: .35 }}>—</span>
+                  : <CountUp value={courseCount} decimals={0} suffix="" />}
               </div>
-            ))}
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "rgba(255,255,255,.4)", marginTop: 7 }}>COURSES</div>
+            </div>
+            <div>
+              <div className="mono" style={{ fontSize: 24, letterSpacing: "-.03em", color: "#FBF8F2" }}><CountUp value={5} decimals={0} suffix="" /></div>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "rgba(255,255,255,.4)", marginTop: 7 }}>BAGS PACKED</div>
+            </div>
           </div>
         </div>
       </div>
@@ -131,11 +231,12 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
             <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <h1 style={{ margin: 0, fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>Start with your own course.</h1>
               <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>Course recon is free and needs no card. You pay only when you want a solved plan.</p>
+              {ErrorNote}
               {OAuthButtons}
               {OrDivider}
               <div style={fieldLabel}>EMAIL</div>
               <div style={{ display: "flex", alignItems: "center", height: 48, marginTop: 10, padding: "0 15px", border: `1px solid ${emailBad ? "rgba(192,57,43,.45)" : "rgba(21,20,15,.16)"}`, borderRadius: 8, background: "#fff" }}>
-                <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, outline: "none" }} />
+                <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, outline: "none" }} />
                 {emailOk && <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 7.2 5.6 9.8 11 4.4" stroke="#5C9E72" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></svg>}
               </div>
               {emailBad && (
@@ -146,7 +247,7 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
               )}
               <div style={{ ...fieldLabel, marginTop: 22 }}>PASSWORD</div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, height: 48, marginTop: 10, padding: "0 15px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff" }}>
-                <input type="text" value={reveal ? pw : "•".repeat(n)} onChange={(e) => setPw(e.target.value.replace(/•/g, "") || pw)} placeholder="At least 10 characters" style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, letterSpacing: ".06em", outline: "none" }} />
+                <input type={reveal ? "text" : "password"} autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={`At least ${MIN_PASSWORD} characters`} style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, letterSpacing: ".06em", outline: "none" }} />
                 <span onClick={() => setReveal((r) => !r)} className="mono link-accent" style={{ fontSize: 9, letterSpacing: ".12em", color: "#8C8578", cursor: "pointer", whiteSpace: "nowrap" }}>{reveal ? "HIDE" : "SHOW"}</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
@@ -167,25 +268,17 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
           {mode === "login" && (
             <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <h1 style={{ margin: 0, fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>Welcome back.</h1>
-              <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>Six days to Tramuntana Full. Your plan is where you left it.</p>
-              {loginError && (
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 11, marginTop: 24, padding: "15px 17px", borderRadius: 9, background: "rgba(192,57,43,.08)", border: "1px solid rgba(192,57,43,.3)" }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#C0392B", flex: "none", marginTop: 6 }} />
-                  <span style={{ fontSize: 14, lineHeight: 1.5, color: "#3D3A31" }}>That email and password do not match. Two attempts left before a temporary lock.</span>
-                </div>
-              )}
+              <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>Your plans are where you left them.</p>
+              {ErrorNote}
               {OAuthButtons}
               {OrDivider}
               <div style={fieldLabel}>EMAIL</div>
               <div style={{ display: "flex", alignItems: "center", height: 48, marginTop: 10, padding: "0 15px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff" }}>
-                <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, outline: "none" }} />
+                <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, outline: "none" }} />
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 22 }}>
-                <span style={fieldLabel}>PASSWORD</span>
-                <span onClick={() => go("forgot")} className="mono link-accent" style={{ fontSize: 9, letterSpacing: ".12em", color: "#C6461B", cursor: "pointer" }}>FORGOT IT?</span>
-              </div>
+              <div style={{ ...fieldLabel, marginTop: 22 }}>PASSWORD</div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, height: 48, marginTop: 10, padding: "0 15px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff" }}>
-                <input type="text" value={reveal ? pw : "•".repeat(n)} onChange={(e) => setPw(e.target.value.replace(/•/g, "") || pw)} style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, letterSpacing: ".06em", outline: "none" }} />
+                <input type={reveal ? "text" : "password"} autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, letterSpacing: ".06em", outline: "none" }} />
                 <span onClick={() => setReveal((r) => !r)} className="mono link-accent" style={{ fontSize: 9, letterSpacing: ".12em", color: "#8C8578", cursor: "pointer", whiteSpace: "nowrap" }}>{reveal ? "HIDE" : "SHOW"}</span>
               </div>
               <div onClick={submit} className="btn-dark-to-accent" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 11, height: 52, marginTop: 26, borderRadius: 8, cursor: "pointer", background: "#E4622F", color: "#fff", fontSize: 15.5, fontWeight: 600, letterSpacing: "-.015em" }}>
@@ -198,9 +291,10 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
             <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <h1 style={{ margin: 0, fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>Reset your password.</h1>
               <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>Enter the email on your account and we will send a link valid for one hour.</p>
+              {ErrorNote}
               <div style={{ ...fieldLabel, marginTop: 30 }}>EMAIL</div>
               <div style={{ display: "flex", alignItems: "center", height: 48, marginTop: 10, padding: "0 15px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff" }}>
-                <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, outline: "none" }} />
+                <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, outline: "none" }} />
               </div>
               <div onClick={submit} className="btn-dark-to-accent" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 11, height: 52, marginTop: 24, borderRadius: 8, cursor: "pointer", background: "#E4622F", color: "#fff", fontSize: 15.5, fontWeight: 600, letterSpacing: "-.015em" }}>
                 {busy && Spinner}{subLabel}
@@ -217,7 +311,7 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
               <h1 style={{ margin: "22px 0 0", fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>Check your inbox.</h1>
               <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>We sent a reset link to <span style={{ color: "#15140F", fontWeight: 500 }}>{email}</span>. It expires in one hour and can only be used once.</p>
               <div style={{ marginTop: 26, padding: "18px 20px", borderRadius: 10, background: "rgba(21,20,15,.045)", fontSize: 14, lineHeight: 1.55, color: "#5C574B" }}>
-                Nothing arrived? Check spam, then <span onClick={() => setBusy(false)} style={{ color: "#C6461B", fontWeight: 500, cursor: "pointer" }}>send it again</span>. If the address has no account we still show this screen — we will not confirm who is registered.
+                Nothing arrived? Check spam, then <span onClick={() => go("forgot")} style={{ color: "#C6461B", fontWeight: 500, cursor: "pointer" }}>send it again</span>. If the address has no account we still show this screen — we will not confirm who is registered.
               </div>
               <div onClick={() => go("login")} className="btn-outline-dark2" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 50, marginTop: 22, border: "1px solid rgba(21,20,15,.18)", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Back to log in</div>
             </div>
@@ -226,12 +320,11 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
           {mode === "reset" && (
             <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <h1 style={{ margin: 0, fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>Choose a new password.</h1>
-              <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>
-                Resetting for <span style={{ color: "#15140F", fontWeight: 500 }}>{email}</span>. This link works once and expires in <span className="mono">42 min</span>.
-              </p>
+              <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>This link works once and expires one hour after it was sent.</p>
+              {ErrorNote}
               <div style={{ ...fieldLabel, marginTop: 30 }}>NEW PASSWORD</div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, height: 48, marginTop: 10, padding: "0 15px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff" }}>
-                <input type="text" value={reveal ? pw : "•".repeat(n)} onChange={(e) => setPw(e.target.value.replace(/•/g, "") || pw)} placeholder="At least 10 characters" style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, letterSpacing: ".06em", outline: "none" }} />
+                <input type={reveal ? "text" : "password"} autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={`At least ${MIN_PASSWORD} characters`} style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, letterSpacing: ".06em", outline: "none" }} />
                 <span onClick={() => setReveal((r) => !r)} className="mono link-accent" style={{ fontSize: 9, letterSpacing: ".12em", color: "#8C8578", cursor: "pointer", whiteSpace: "nowrap" }}>{reveal ? "HIDE" : "SHOW"}</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
@@ -242,7 +335,7 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
               </div>
               <div style={{ ...fieldLabel, marginTop: 22 }}>CONFIRM PASSWORD</div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, height: 48, marginTop: 10, padding: "0 15px", border: `1px solid ${pw2.length > 0 && pw2 !== pw ? "rgba(192,57,43,.45)" : "rgba(21,20,15,.16)"}`, borderRadius: 8, background: "#fff" }}>
-                <input type="text" value={reveal ? pw2 : "•".repeat(pw2.length)} onChange={(e) => setPw2(e.target.value.replace(/•/g, ""))} placeholder="Type it again" style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, letterSpacing: ".06em", outline: "none" }} />
+                <input type={reveal ? "text" : "password"} autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="Type it again" style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, letterSpacing: ".06em", outline: "none" }} />
                 {pw2.length > 0 && pw2 === pw && <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 7.2 5.6 9.8 11 4.4" stroke="#5C9E72" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></svg>}
               </div>
               {pw2.length > 0 && pw2 !== pw && (
@@ -271,6 +364,23 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
             </div>
           )}
 
+          {mode === "verify-pending" && (
+            <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: "50%", background: "rgba(92,158,114,.14)" }}>
+                <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="4.5" width="15" height="11" rx="2" stroke="#3E7B55" strokeWidth={1.6} /><path d="M3.2 5.5 10 11l6.8-5.5" stroke="#3E7B55" strokeWidth={1.6} strokeLinecap="round" /></svg>
+              </span>
+              <h1 style={{ margin: "22px 0 0", fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>Confirm your email.</h1>
+              <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>We sent a link to <span style={{ color: "#15140F", fontWeight: 500 }}>{email}</span>. Open it and your account is live.</p>
+              <div
+                onClick={() => void client.POST("/api/v1/auth/resend-verification")}
+                className="btn-outline-dark2"
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 50, marginTop: 22, border: "1px solid rgba(21,20,15,.18)", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer" }}
+              >
+                Send it again
+              </div>
+            </div>
+          )}
+
           {mode === "verify" && (
             <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: "50%", background: "#5C9E72" }}>
@@ -279,18 +389,9 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
               <h1 style={{ margin: "22px 0 0", fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>Email verified.</h1>
               <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>Your account is live. Three short questions and the solver knows enough to be useful.</p>
               <Link href={routes.onboarding} className="btn-dark-to-accent" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 52, marginTop: 28, background: "#E4622F", color: "#fff", borderRadius: 8, fontSize: 15.5, fontWeight: 600, letterSpacing: "-.015em" }}>Continue to setup</Link>
-              <Link href={routes.courseRecon} className="btn-outline-dark2" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 50, marginTop: 10, border: "1px solid rgba(21,20,15,.18)", borderRadius: 8, fontSize: 15, fontWeight: 600 }}>Skip — just browse courses</Link>
+              <Link href={routes.races} className="btn-outline-dark2" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 50, marginTop: 10, border: "1px solid rgba(21,20,15,.18)", borderRadius: 8, fontSize: 15, fontWeight: 600 }}>Skip — just browse courses</Link>
             </div>
           )}
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 44, paddingTop: 22, borderTop: "1px solid rgba(21,20,15,.1)" }}>
-            <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>STATES</span>
-            <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
-              {JUMPS.map((j) => (
-                <span key={j.k} onClick={() => go(j.k)} className="mono" style={{ fontSize: 8.5, letterSpacing: ".1em", padding: "5px 9px", borderRadius: 4, cursor: "pointer", background: mode === j.k ? "#15140F" : "rgba(21,20,15,.06)", color: mode === j.k ? "#FBF8F2" : "#8C8578" }}>{j.name}</span>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>

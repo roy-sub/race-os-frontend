@@ -28,7 +28,7 @@ export function strayCourse() {
 }
 
 export const NOT_FOUND_LINKS = [
-  { k: "FREE", name: "Browse all 412 courses", href: routes.races },
+  { k: "FREE", name: "Browse the course directory", href: routes.races },
   { k: "APP", name: "Back to your dashboard", href: routes.dashboard },
   { k: "PLANS", name: "Your solved plans", href: routes.myPlans },
   { k: "HELP", name: "Search the help centre", href: routes.notifications },
@@ -62,9 +62,13 @@ export const EMPTY_STATES = [
   { where: "MY PLANS · NO PLANS YET", kicker: "NOTHING SOLVED", head: "Your first plan takes about six minutes.",
     sub: "Pick a race, answer what you know, and the solver handles the rest. Nothing is required.",
     cta: "Build a plan", ctaBg: "#E4622F", ctaFg: "#fff", ctaBorder: "#E4622F" },
+  // No endpoint ingests an athlete-supplied course GPX, so the empty state
+  // points at what does exist rather than promising an upload. The live
+  // directory reads its count from GET /courses; this showcase copy cannot,
+  // so it stays deliberately count-free.
   { where: "RACE DIRECTORY · NO MATCHES", kicker: "NOT IN THE DIRECTORY", head: "We do not have that course.",
-    sub: "Upload a GPX and enter the cut-offs. The plan still solves, and estimates are marked as estimates.",
-    cta: "Upload a course", ctaBg: "transparent", ctaFg: "#15140F", ctaBorder: "rgba(21,20,15,.2)" },
+    sub: "Every course we have bundled is in the directory, with real elevation, real aid stations and real cut-offs.",
+    cta: "Browse the directory", ctaBg: "transparent", ctaFg: "#15140F", ctaBorder: "rgba(21,20,15,.2)" },
   { where: "SEASON HISTORY · NO FINISHES", kicker: "NOTHING RACED YET", head: "Your first finish lands here.",
     sub: "Upload your file after the race and this becomes a history with real, measured numbers.",
     cta: "See how it works", ctaBg: "transparent", ctaFg: "#15140F", ctaBorder: "rgba(21,20,15,.2)" },

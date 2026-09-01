@@ -6,10 +6,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "api:pull": "node scripts/pull-openapi.mjs",
+    "api:types": "openapi-typescript openapi/openapi.json -o lib/api/schema.d.ts",
+    "api:sync": "npm run api:pull && npm run api:types",
+    "deploy": "next build && wrangler pages deploy out --project-name=${CF_PAGES_PROJECT:-raceos}"
   },
   "dependencies": {
+    "@stripe/stripe-js": "^5.10.0",
+    "@tanstack/react-query": "^5.102.8",
     "next": "16.3.3",
+    "openapi-fetch": "^0.13.8",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -19,6 +27,9 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
-    "typescript": "^5"
+    "openapi-typescript": "^7.13.0",
+    "playwright": "^1.62.1",
+    "typescript": "^5",
+    "wrangler": "^4.127.1"
   }
 }

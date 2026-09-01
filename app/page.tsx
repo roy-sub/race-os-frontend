@@ -8,7 +8,10 @@ import { Reveal, RevealLines, ZoomReveal } from "@/components/Reveal";
 import { CountUp } from "@/components/CountUp";
 import { MediaPlaceholder } from "@/components/MediaPlaceholder";
 import { routes } from "@/lib/routes";
-import { BAGS, FAQS, buildElevation, buildRoute, fmtClock } from "@/lib/landing";
+import { BAGS, FAQS, fmtClock } from "@/lib/landing";
+import { useCourses, useRecon } from "@/lib/api/courses";
+import { elevationPath, formatKm, formatMetres, projectLegs, sortLegs } from "@/lib/courseGeo";
+import { OsmAttribution } from "@/components/OsmAttribution";
 
 const COURSES = [
   "TRAMUNTANA FULL",
@@ -55,8 +58,33 @@ const STAR =
   "M10 1l2.6 5.6 6.1.7-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L1.3 7.3l6.1-.7z";
 
 export default function LandingPage() {
-  const el = useMemo(() => buildElevation(), []);
-  const rt = useMemo(() => buildRoute(), []);
+  /**
+   * The course canvas draws a real course, not a sine wave.
+   *
+   * It takes whichever course the directory lists first and reads its recon
+   * payload — the same public, unauthenticated endpoints the course pages use.
+   * If the API is unreachable the canvas renders empty rather than falling back
+   * to a fabricated loop: a blank panel that shows a real outage beats a
+   * plausible one that hides it.
+   */
+  const courses = useCourses();
+  const featuredSlug = courses.data?.data[0]?.slug ?? null;
+  const recon = useRecon(featuredSlug);
+  const featured = recon.data ?? null;
+
+  const canvasLegs = useMemo(() => (featured ? sortLegs(featured.legs) : []), [featured]);
+  const canvasProjection = useMemo(
+    () => (canvasLegs.length ? projectLegs(canvasLegs, { width: 1200, height: 286 }, 20) : null),
+    [canvasLegs],
+  );
+  const canvasBikeLeg = canvasLegs.find((l) => l.leg === "BIKE") ?? canvasLegs[0] ?? null;
+  const canvasProfile = featured?.elevation_profile?.legs?.[canvasBikeLeg?.leg ?? "BIKE"] ?? null;
+  const canvasSeries = canvasProfile?.display ?? null;
+  const canvasPoints = canvasSeries?.s_km.length ?? 0;
+  const canvasChart = useMemo(
+    () => (canvasProfile ? elevationPath(canvasProfile, { width: 1200, top: 306, bottom: 400 }) : null),
+    [canvasProfile],
+  );
 
   const [goal, setGoal] = useState(705);
   const [hoverOn, setHoverOn] = useState(false);
@@ -85,28 +113,17 @@ export default function LandingPage() {
   const statusColor = { clear: "#2E7D53", tight: "#A9761A", fail: "#C0432E" }[status];
   const pillBg = status === "clear" ? "#EAF5EE" : status === "tight" ? "#FBF2E0" : "#FBEAE6";
 
-  const mn = Math.min(...el);
-  const mx = Math.max(...el);
-  const X = (i: number) => (i / (el.length - 1)) * 1200;
-  const Y = (v: number) => 396 - ((v - mn) / (mx - mn)) * 92;
-  const elevLine = el.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
-  const elevArea = elevLine + " L 1200 400 L 0 400 Z";
-  const routePath =
-    rt.map((p, k) => (k ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ") + " Z";
-  const runPath = (() => {
-    let d = "";
-    for (let k = 0; k <= 70; k++) {
-      const a = (k / 70) * Math.PI * 2;
-      d += (k ? " L " : "M ") + (330 + 150 * Math.cos(a)).toFixed(1) + " " + (266 + 22 * Math.sin(a)).toFixed(1);
-    }
-    return d;
+  const X = (i: number) => (canvasPoints > 1 ? (i / (canvasPoints - 1)) * 1200 : 0);
+  const hoverKm = canvasSeries && hi < canvasPoints ? canvasSeries.s_km[hi] : null;
+  const hoverH = canvasSeries && hi < canvasPoints ? canvasSeries.h_m[hi] : null;
+
+  /** The point on the route matching the hovered point on the profile. */
+  const routeMarker = (() => {
+    if (!canvasProjection || !canvasBikeLeg || canvasPoints < 2) return null;
+    const f = hi / (canvasPoints - 1);
+    const c = canvasBikeLeg.coordinates[Math.round(f * (canvasBikeLeg.coordinates.length - 1))];
+    return c ? canvasProjection.project(c[0], c[1]) : null;
   })();
-  const markers = [0.09, 0.24, 0.38, 0.52, 0.67, 0.86].map((f) => {
-    const p = rt[Math.round(f * (rt.length - 1))];
-    return { x: p[0].toFixed(1), y: p[1].toFixed(1) };
-  });
-  const mp = rt[Math.round((hi / (el.length - 1)) * (rt.length - 1))];
-  const grad = hi > 0 ? ((el[hi] - el[hi - 1]) / (180200 / el.length)) * 100 : 0;
 
   const carb = Math.max(55, Math.min(90, Math.round(55 + (960 - goal) * 0.09)));
   const carbPct = Math.round((carb / 90) * 100) + "%";
@@ -131,10 +148,11 @@ export default function LandingPage() {
   ];
 
   const onHover = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (canvasPoints < 2) return;
     const r = e.currentTarget.getBoundingClientRect();
     const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
     setHoverOn(true);
-    setHi(Math.round(f * (el.length - 1)));
+    setHi(Math.round(f * (canvasPoints - 1)));
   };
 
   const bag = BAGS[bagIdx];
@@ -245,13 +263,14 @@ export default function LandingPage() {
             </div>
             <div style={{ display: "flex", gap: 52, paddingBottom: 8 }}>
               {[
-                { value: 412, dec: 0, suffix: "", label: "COURSES", delay: 0.34 },
-                { value: 3.1, dec: 1, suffix: "s", label: "MEDIAN SOLVE", delay: 0.4 },
+                { value: courses.data?.meta.total, dec: 0, suffix: "", label: "COURSES", delay: 0.34 },
                 { value: 5, dec: 0, suffix: "", label: "BAGS PACKED", delay: 0.46 },
               ].map((stat) => (
                 <Reveal key={stat.label} delay={stat.delay}>
                   <div className="mono" style={{ fontSize: 32, fontWeight: 500, letterSpacing: "-.035em", color: "#FBF8F2" }}>
-                    <CountUp value={stat.value} decimals={stat.dec} suffix={stat.suffix} />
+                    {stat.value === undefined
+                      ? <span style={{ opacity: .35 }}>—</span>
+                      : <CountUp value={stat.value} decimals={stat.dec} suffix={stat.suffix} />}
                   </div>
                   <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".16em", color: "rgba(255,255,255,.45)", marginTop: 8 }}>
                     {stat.label}
@@ -280,7 +299,7 @@ export default function LandingPage() {
         <Reveal style={{ background: "#15140F", borderRadius: 9, padding: 18 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, padding: "0 4px" }}>
             <div className="mono" style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 10, letterSpacing: ".16em", color: "rgba(255,255,255,.42)" }}>
-              <span style={{ width: 5, height: 5, background: "#E4622F", borderRadius: "50%" }} />TRAMUNTANA FULL · MALLORCA
+              <span style={{ width: 5, height: 5, background: "#E4622F", borderRadius: "50%" }} />{featured ? `${featured.course.name.toUpperCase()} · ${featured.course.place.toUpperCase()}` : "LOADING COURSE"}
             </div>
             <div style={{ display: "flex", gap: 3, padding: 3, background: "rgba(255,255,255,.06)", borderRadius: 5 }}>
               <span className="mono" style={{ padding: "5px 12px", borderRadius: 3, background: "#E4622F", color: "#fff", fontSize: 9.5, letterSpacing: ".12em" }}>2D</span>
@@ -299,26 +318,42 @@ export default function LandingPage() {
                   <stop offset="100%" stopColor="#E4622F" stopOpacity={0.015} />
                 </linearGradient>
               </defs>
-              <path d={routePath} fill="none" stroke="rgba(255,255,255,.26)" strokeWidth={1.6} strokeLinejoin="round" />
-              <path d={runPath} fill="none" stroke="rgba(255,255,255,.13)" strokeWidth={1.4} strokeDasharray="5 5" />
-              <rect x={96} y={248} width={74} height={34} rx={4} fill="none" stroke="rgba(255,255,255,.17)" strokeWidth={1.3} strokeDasharray="3 4" />
-              {markers.map((m, k) => (
-                <circle key={k} cx={m.x} cy={m.y} r={3.4} fill="#0B0A09" stroke="rgba(255,255,255,.5)" strokeWidth={1.3} />
+              {canvasProjection?.paths.map((pathRow) => (
+                <path
+                  key={pathRow.leg}
+                  d={pathRow.d}
+                  fill="none"
+                  stroke={pathRow.leg === "BIKE" ? "rgba(255,255,255,.3)" : "rgba(255,255,255,.14)"}
+                  strokeWidth={pathRow.leg === "BIKE" ? 1.7 : 1.4}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  strokeDasharray={pathRow.leg === "RUN" ? "5 5" : undefined}
+                />
               ))}
-              {hoverOn && <circle cx={mp[0].toFixed(1)} cy={mp[1].toFixed(1)} r={6.5} fill="#E4622F" stroke="#0B0A09" strokeWidth={2.4} />}
-              <path d={elevArea} fill="url(#lp-fill)" />
-              <path d={elevLine} fill="none" stroke="#E4622F" strokeWidth={1.7} strokeLinejoin="round" />
-              {hoverOn && <line x1={X(hi).toFixed(1)} y1={298} x2={X(hi).toFixed(1)} y2={400} stroke="rgba(255,255,255,.4)" strokeWidth={1} />}
+              {canvasProjection && featured?.aid_stations.map((station, k) => {
+                const legRow = canvasLegs.find((l) => l.leg === station.leg);
+                if (!legRow?.coordinates.length) return null;
+                const f = Math.max(0, Math.min(1, (station.km * 1000) / legRow.distance_m));
+                const c = legRow.coordinates[Math.round(f * (legRow.coordinates.length - 1))];
+                const [x, y] = canvasProjection.project(c[0], c[1]);
+                return <circle key={k} cx={x} cy={y} r={3.4} fill="#0B0A09" stroke="rgba(255,255,255,.5)" strokeWidth={1.3} />;
+              })}
+              {hoverOn && routeMarker && <circle cx={routeMarker[0].toFixed(1)} cy={routeMarker[1].toFixed(1)} r={6.5} fill="#E4622F" stroke="#0B0A09" strokeWidth={2.4} />}
+              {canvasChart && <path d={canvasChart.area} fill="url(#lp-fill)" />}
+              {canvasChart && <path d={canvasChart.line} fill="none" stroke="#E4622F" strokeWidth={1.7} strokeLinejoin="round" />}
+              {hoverOn && canvasChart && <line x1={X(hi).toFixed(1)} y1={298} x2={X(hi).toFixed(1)} y2={400} stroke="rgba(255,255,255,.4)" strokeWidth={1} />}
             </svg>
             <div className="mono" style={{ position: "absolute", left: 18, bottom: 14, fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.34)" }}>
-              BIKE · 180.2 KM · 2,340 M GAIN
+              {canvasBikeLeg && canvasProfile
+                ? `${canvasBikeLeg.leg} · ${formatKm(canvasBikeLeg.distance_m)} KM · ${formatMetres(canvasProfile.gain_m)} M GAIN`
+                : ""}
             </div>
             <div className="mono" style={{ position: "absolute", right: 18, top: 16, display: "flex", gap: 18, fontSize: 11, color: "#FBF8F2" }}>
-              {hoverOn && <span>{(180.2 * (hi / (el.length - 1))).toFixed(1)} km</span>}
-              {hoverOn && <span>{Math.round(el[hi])} m</span>}
-              {hoverOn && <span style={{ color: "#E4622F" }}>{grad.toFixed(1)}%</span>}
+              {hoverOn && hoverKm != null && <span>{hoverKm.toFixed(1)} km</span>}
+              {hoverOn && hoverH != null && <span>{Math.round(hoverH)} m</span>}
             </div>
           </div>
+          <OsmAttribution attribution={featured?.bundle.attribution} tone="dark" style={{ marginTop: 12, padding: "0 4px" }} />
         </Reveal>
       </section>
 

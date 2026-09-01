@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Mark } from "@/components/Mark";
 import { MediaPlaceholder } from "@/components/MediaPlaceholder";
 import { routes } from "@/lib/routes";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 import {
   ACT_STYLE, ATHLETES, BOARD_STATS, CMP_INDICES, CMP_INSIGHTS, CMP_ROW_DEFS, LINKS,
   M_COLOR, PERMS, SHARE_RULES, type PermKey,
@@ -17,7 +18,7 @@ const TABS: { k: Tab; n: string }[] = [
 ];
 const FILTERS = ["All", "Needs you", "Race week", "Clear"] as const;
 
-export default function CoachPage() {
+function CoachPage() {
   const [tab, setTab] = useState<Tab>("board");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
   const [query, setQuery] = useState("");
@@ -454,5 +455,14 @@ export default function CoachPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function GuardedCoachPage() {
+  return (
+    <GuardedPage>
+      <CoachPage />
+    </GuardedPage>
   );
 }

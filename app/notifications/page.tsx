@@ -6,6 +6,7 @@ import { Mark } from "@/components/Mark";
 import { MediaPlaceholder } from "@/components/MediaPlaceholder";
 import { routes } from "@/lib/routes";
 import { DOT_COLOR, HELP, ITEMS, TAG_FG } from "@/lib/notifications";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 
 const HREF_MAP: Record<string, string> = {
   racePlan: routes.racePlan,
@@ -17,7 +18,7 @@ const HREF_MAP: Record<string, string> = {
 const FILTERS = ["All", "Unread", "Actionable", "Archive"] as const;
 const TOPIC_NAMES = Object.keys(HELP);
 
-export default function NotificationsPage() {
+function NotificationsPage() {
   const [view, setView] = useState<"inbox" | "help">("inbox");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
   const [read, setRead] = useState<Record<string, boolean>>({});
@@ -214,5 +215,14 @@ export default function NotificationsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function GuardedNotificationsPage() {
+  return (
+    <GuardedPage>
+      <NotificationsPage />
+    </GuardedPage>
   );
 }

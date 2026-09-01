@@ -1,209 +1,261 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Mark } from "@/components/Mark";
+import { ApiErrorState } from "@/components/ApiErrorState";
+import { FeasibilityVerdict } from "@/components/FeasibilityVerdict";
+import { Paywall, gateFromEntitlement, gateFromPaymentRequired } from "@/components/Paywall";
+import { OsmAttribution } from "@/components/OsmAttribution";
+import { Skeleton } from "@/components/Skeleton";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 import { routes } from "@/lib/routes";
+import { ApiError } from "@/lib/api/errors";
+import { useCourses, useRecon, type Course } from "@/lib/api/courses";
+import { useEntitlements, usePrices, findEntitlement } from "@/lib/api/billing";
 import {
-  RACE_RESULTS,
-  SEG,
-  SOLVE_STAGES,
-  STEP_NAMES,
-  buildBags,
-  buildElevation,
-  elevPath,
-  fmtClock,
-  wallClock,
-} from "@/lib/planBuilder";
+  CONSTRAINT_KEYS, CONSTRAINT_LABELS, CONSTRAINT_UNITS, ESTIMATORS,
+  SOURCE_LABELS, SOURCE_STYLE,
+  useAuthorizeCheckout, useConstraints, useCreatePlan, useCreateRace,
+  useEstimateConstraint, usePlan, useSaveDraft, useSolvePlan, useWriteConstraint,
+  asSolved,
+  type ConstraintKey, type RiskLevel, type SolvedPlan,
+} from "@/lib/api/plans";
+import { elevationPath, formatClock, formatKm, formatMargin } from "@/lib/courseGeo";
 
-type GoalType = "safe" | "time" | "pb";
-type Risk = "Conservative" | "Balanced" | "Aggressive";
+const STEP_NAMES = ["Race", "Fitness", "Goal", "Feasibility", "Fuelling", "Bags", "Race card"];
 
-type State = {
-  step: number;
-  goal: number;
-  dist: string;
-  query: string;
-  picked: boolean;
-  splitImported: boolean;
-  goalType: GoalType;
-  risk: Risk;
-  firstTimer: boolean;
-  solving: boolean;
-  stage: number;
-  solved: boolean;
-  carb: number;
-  source: string;
-  caffeine: string;
-  bag: number;
-  qty: Record<string, number>;
+const cardStyle: React.CSSProperties = {
+  background: "#FBF8F2", borderRadius: 12, padding: "24px 26px",
+  boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)",
+};
+const inputBoxStyle: React.CSSProperties = {
+  display: "flex", alignItems: "center", gap: 11, height: 46, padding: "0 14px",
+  border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff",
+};
+const labelStyle: React.CSSProperties = {
+  fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: ".15em", color: "#8C8578",
 };
 
-const INITIAL: State = {
-  step: 1, goal: 705, dist: "Full", query: "Tramuntana Full", picked: true,
-  splitImported: false, goalType: "time", risk: "Balanced", firstTimer: false,
-  solving: false, stage: 0, solved: false,
-  carb: 78, source: "Gels", caffeine: "Run only",
-  bag: 1, qty: {},
-};
+/** The clock the athlete will actually read, from the plan's own start time. */
+function wallClockFrom(startTimeLocal: string | null | undefined, elapsedMinutes: number): string {
+  if (!startTimeLocal) return "—";
+  const [h, m] = startTimeLocal.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return "—";
+  const total = (h * 60 + m + elapsedMinutes) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(Math.round(total % 60)).padStart(2, "0")}`;
+}
 
-export default function PlanBuilderPage() {
-  const [st, setSt] = useState<State>(INITIAL);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const el = useMemo(() => buildElevation(), []);
+/** Today plus a margin, so the date field never defaults into the past. */
+function defaultEventDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 42);
+  return d.toISOString().slice(0, 10);
+}
 
-  useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
+function BuilderScreen() {
+  const router = useRouter();
+  const params = useSearchParams();
 
-  const startSolve = () => {
-    if (timer.current) clearInterval(timer.current);
-    setSt((s) => ({ ...s, solving: true, solved: false, stage: 0 }));
-    timer.current = setInterval(() => {
-      setSt((s) => {
-        const n = s.stage + 1;
-        if (n >= SOLVE_STAGES.length) {
-          if (timer.current) clearInterval(timer.current);
-          return { ...s, stage: n, solving: false, solved: true };
-        }
-        return { ...s, stage: n };
+  // --- step 1 state: the race -----------------------------------------------
+  const courses = useCourses();
+  const [courseSlug, setCourseSlug] = useState<string | null>(params.get("course"));
+  const [eventDate, setEventDate] = useState(defaultEventDate);
+  const [startTime, setStartTime] = useState("06:40");
+  const [bib, setBib] = useState("");
+  const [courseQuery, setCourseQuery] = useState("");
+
+  const selectedCourse: Course | undefined = courses.data?.data.find((c) => c.slug === courseSlug);
+  const recon = useRecon(courseSlug);
+
+  // --- plan identity --------------------------------------------------------
+  const [raceId, setRaceId] = useState<string | null>(params.get("race"));
+  const [planId, setPlanId] = useState<string | null>(params.get("plan"));
+
+  const createRace = useCreateRace();
+  const createPlan = useCreatePlan();
+  const saveDraft = useSaveDraft(planId);
+  const solve = useSolvePlan(planId);
+  const authorize = useAuthorizeCheckout();
+  const plan = usePlan(planId);
+
+  // --- step 2 state: constraints -------------------------------------------
+  const constraints = useConstraints();
+  const writeConstraint = useWriteConstraint();
+  const estimate = useEstimateConstraint();
+  const constraintRows = constraints.data;
+  const byKey = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof constraintRows>[number]>();
+    for (const row of constraintRows ?? []) map.set(row.key, row);
+    return map;
+  }, [constraintRows]);
+
+  // --- step 3 state: the goal ----------------------------------------------
+  const [goalMinutes, setGoalMinutes] = useState<number | null>(null);
+  const [risk, setRisk] = useState<RiskLevel>("balanced");
+  const [nightFlag, setNightFlag] = useState(false);
+
+  // --- step 5 state: the carb override -------------------------------------
+  const [carbOverride, setCarbOverride] = useState<number | null>(null);
+
+  const [step, setStep] = useState(1);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [editingConstraint, setEditingConstraint] = useState<ConstraintKey | null>(null);
+  const [estimatorFor, setEstimatorFor] = useState<ConstraintKey | null>(null);
+  const [manualValue, setManualValue] = useState("");
+  const [answers, setAnswers] = useState<Record<string, string | boolean>>({});
+
+  const solved: SolvedPlan | null = asSolved(plan.data);
+  const entitlements = useEntitlements(raceId, Boolean(raceId));
+  const prices = usePrices();
+  const solveEntitlement = findEntitlement(entitlements.data, "solve_plan");
+  const gate = gateFromEntitlement(solveEntitlement);
+
+  const paymentGate = error?.code === "PAYMENT_REQUIRED"
+    ? gateFromPaymentRequired(error.paymentRequired, error.message)
+    : null;
+  const infeasible = error?.infeasible ?? null;
+
+  // The barriers this course actually publishes, for the goal slider's bounds.
+  const finishLimit = useMemo(() => {
+    const limits = recon.data?.barriers.map((b) => b.limit_minutes_from_start) ?? [];
+    return limits.length ? Math.max(...limits) : 960;
+  }, [recon.data]);
+
+  /**
+   * The goal, defaulted from the course's own finish limit.
+   *
+   * Derived rather than written into state from an effect: the slider only
+   * needs a value to show, and seeding state would fight the athlete if the
+   * course changed under it.
+   */
+  const effectiveGoal = goalMinutes ?? Math.round(finishLimit * 0.78);
+
+  /** Keep the URL carrying the ids, so a reload resumes rather than restarts. */
+  useEffect(() => {
+    if (!planId && !raceId) return;
+    const next = new URLSearchParams();
+    if (courseSlug) next.set("course", courseSlug);
+    if (raceId) next.set("race", raceId);
+    if (planId) next.set("plan", planId);
+    router.replace(`${routes.planBuilder}?${next.toString()}`, { scroll: false });
+  }, [courseSlug, raceId, planId, router]);
+
+  const busy =
+    createRace.isPending || createPlan.isPending || saveDraft.isPending ||
+    solve.isPending || authorize.isPending;
+
+  /**
+   * Step 1 → 2. A plan is solved for a race, so the race is created first and
+   * the plan hung off it. Re-posting the same course and date returns the
+   * existing race, so going back and forward does not create duplicates.
+   */
+  const startPlan = async () => {
+    if (!courseSlug || busy) return;
+    setError(null);
+    try {
+      const race = await createRace.mutateAsync({
+        course_ref: courseSlug,
+        event_date: eventDate,
+        start_time_local: startTime,
+        bib: bib.trim() || null,
       });
-    }, 440);
-  };
-
-  const goTo = (n: number) => {
-    if (n > st.step && !st.solved && n > 4) return;
-    setSt((s) => ({ ...s, step: n }));
-    if (n === 4 && !st.solved && !st.solving) setTimeout(startSolve, 220);
-  };
-  const goBack = () => setSt((s) => ({ ...s, step: Math.max(1, s.step - 1) }));
-  const goNext = () => {
-    const n = Math.min(7, st.step + 1);
-    setSt((s) => ({ ...s, step: n }));
-    if (n === 4 && !st.solved && !st.solving) setTimeout(startSolve, 220);
-  };
-
-  // ---- solver math ----
-  const G = st.goal;
-  const swim = G * 0.093, t1 = 8, t2 = 5, rest = G - swim - t1 - t2;
-  const bike = rest * 0.582, run = rest * 0.418;
-  const gates = [
-    { name: "SWIM EXIT", limit: 140, eta: swim },
-    { name: "BIKE KM 120", limit: 510, eta: swim + t1 + bike * (120 / 180.2) },
-    { name: "BIKE CUT-OFF", limit: 630, eta: swim + t1 + bike },
-    { name: "FINISH LINE", limit: 960, eta: G },
-  ];
-  const worst = Math.min(...gates.map((g) => g.limit - g.eta));
-  const tight = gates.reduce((a, b) => (a.limit - a.eta < b.limit - b.eta ? a : b));
-  const failing = gates.find((g) => g.limit - g.eta < 0);
-  const S: "clear" | "tight" | "fail" = failing ? "fail" : worst < 20 ? "tight" : "clear";
-  const col = { clear: "#3E7B55", tight: "#A0701A", fail: "#C0392B" }[S];
-  const panelCol = { clear: "#7CC08F", tight: "#E0A33C", fail: "#E86A5A" }[S];
-
-  const bags = useMemo(() => buildBags(st.carb, st.goal > 690), [st.carb, st.goal]);
-  const B = bags[st.bag];
-  const qtyOf = (b: number, i: number, d: number) => {
-    const k = b + ":" + i;
-    return st.qty[k] === undefined ? d : st.qty[k];
-  };
-  const bump = (b: number, i: number, d: number, by: number) => () => {
-    const k = b + ":" + i;
-    const cur = st.qty[k] === undefined ? d : st.qty[k];
-    setSt((s) => ({ ...s, qty: { ...s.qty, [k]: Math.max(0, cur + by) } }));
-  };
-
-  const carbTotal = Math.round((bike / 60) * st.carb + (run / 60) * (st.carb - 18));
-  const ceilPos = ((90 - 40) / 70) * 100;
-
-  const binding: { name: string; value: string }[] = [
-    { name: "Heat adjustment", value: "31°C" },
-    { name: "Aid-station spacing", value: "29.5 km" },
-  ];
-  if (st.splitImported) binding.push({ name: "Imported bike split", value: "LOCKED" });
-  else binding.push({ name: "Bike threshold power", value: "293 w" });
-  if (st.carb >= 88) binding.push({ name: "Gut carbohydrate ceiling", value: "90 g/hr" });
-
-  const results = RACE_RESULTS.filter((r) => r.name.toLowerCase().includes(st.query.toLowerCase()));
-  const showResults = !st.picked && st.query.length > 0;
-
-  const cSwim = st.dist === "Full" ? "3.8 km" : st.dist === "70.3" ? "1.9 km" : "1.5 km";
-  const cBike = st.dist === "Full" ? "180.2 km" : st.dist === "70.3" ? "90.1 km" : "40 km";
-  const cRun = st.dist === "Full" ? "42.2 km" : st.dist === "70.3" ? "21.1 km" : "10 km";
-  const prevLine = elevPath(el, 420, 10, 84);
-  const prevArea = prevLine + " L 420 86 L 0 86 Z";
-
-  const ovLine = elevPath(el, 900, 10, 122);
-  const ovArea = ovLine + " L 900 124 L 0 124 Z";
-  const overlayBands = SEG.map((s) => ({
-    x: ((s.from / 180.2) * 900).toFixed(1),
-    w: (((s.to - s.from) / 180.2) * 900).toFixed(1),
-    cx: (((s.from + s.to) / 2 / 180.2) * 900).toFixed(1),
-    w2: s.w,
-    fill: s.w === "224 w" || s.w === "214 w" ? "rgba(228,98,47,.08)" : "rgba(228,98,47,.03)",
-  }));
-  const clockCards = gates.map((g) => {
-    const m = g.limit - g.eta;
-    return {
-      name: g.name, eta: fmtClock(g.eta), limit: fmtClock(g.limit),
-      margin: (m >= 0 ? "+" : "") + fmtClock(m),
-      color: m < 0 ? "#C0392B" : m < 20 ? "#A0701A" : "#3E7B55",
-      bg: m < 0 ? "rgba(192,57,43,.07)" : m < 20 ? "rgba(224,163,60,.1)" : "rgba(124,192,143,.1)",
-      border: m < 0 ? "rgba(192,57,43,.3)" : m < 20 ? "rgba(224,163,60,.34)" : "rgba(124,192,143,.36)",
-    };
-  });
-
-  const ceilPath = "M 0 " + (128 - (90 / 110) * 116).toFixed(1) + " L 400 " + (128 - (90 / 110) * 116).toFixed(1);
-  const intakePts = (() => {
-    const pts: [number, number][] = [];
-    for (let i = 0; i <= 40; i++) {
-      const f = i / 40;
-      const rate = f < 0.1 ? 0 : f < 0.62 ? st.carb : st.carb - 18;
-      pts.push([f * 400, 128 - (rate / 110) * 116]);
+      setRaceId(race.id);
+      // The race already knows whether a plan exists for it, so an interrupted
+      // builder resumes its own plan instead of starting a second one.
+      const id = race.plan_id ?? (await createPlan.mutateAsync(race.id)).id;
+      setPlanId(id);
+      setStep(2);
+    } catch (caught) {
+      if (caught instanceof ApiError) setError(caught);
+      else throw caught;
     }
-    return pts;
-  })();
-  const intakePath = intakePts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
-  const intakeArea = intakePath + " L 400 128 L 0 128 Z";
+  };
 
-  const aidRows = [
-    { at: wallClock(swim + t1) + " · T1", name: "Transition 1", action: "Three bottles on, first gel in the top tube", total: "12 g", dot: "#E4622F" },
-    { at: wallClock(swim + t1 + bike * 0.19) + " · km 34", name: "Alcúdia", action: "Water only — top bottle A, do not stop", total: "132 g", dot: "#E4622F" },
-    { at: wallClock(swim + t1 + bike * 0.35) + " · km 62", name: "Femenia summit", action: "Water. Drink now, the descent gives you nothing", total: "236 g", dot: "#E4622F" },
-    { at: wallClock(swim + t1 + bike * 0.51) + " · km 92", name: "Bike special needs", action: "Swap bottle, three gels, sunscreen wipe", total: "318 g", dot: "#E4622F" },
-    { at: wallClock(swim + t1 + bike * 0.71) + " · km 128", name: "Sa Pobla", action: "Sports drink and water, last full top-up", total: "462 g", dot: "#E4622F" },
-    { at: wallClock(swim + t1 + bike + t2 + run * 0.5) + " · km 21", name: "Run special needs", action: "Flask refill, two caffeine gels, dry socks", total: carbTotal + " g", dot: "#64707A" },
-  ];
+  const saveGoalAndSolve = async () => {
+    if (!planId || busy) return;
+    setError(null);
+    try {
+      await saveDraft.mutateAsync({
+        goal_minutes: effectiveGoal,
+        risk,
+        night_flag: nightFlag,
+      });
+      setStep(4);
+      await runSolve();
+    } catch (caught) {
+      if (caught instanceof ApiError) setError(caught);
+      else throw caught;
+    }
+  };
 
-  const cardSections = [
-    { title: "PACING", step: 4, cols: 3, rows: [
-      { k: "SWIM 3.8 KM", v: "1:44/100m · " + fmtClock(swim) },
-      { k: "BIKE 180.2 KM", v: "208 w · " + fmtClock(bike) },
-      { k: "RUN 42.2 KM", v: "6:12/km · " + fmtClock(run) },
-    ] },
-    { title: "CUT-OFF MARGINS", step: 4, cols: 4, rows: gates.map((g) => ({ k: g.name, v: (g.limit - g.eta >= 0 ? "+" : "") + fmtClock(g.limit - g.eta) })) },
-    { title: "FUELLING", step: 5, cols: 3, rows: [
-      { k: "CARB / HR", v: st.carb + " g" },
-      { k: "FLUID / HR", v: "760 ml" },
-      { k: "SODIUM / HR", v: "950 mg" },
-    ] },
-    { title: "BAGS", step: 6, cols: 5, rows: bags.map((b, i) => ({ k: "0" + (i + 1) + " " + b.name.toUpperCase().split(" ")[0], v: b.items.length + " items" })) },
-  ];
+  /**
+   * Solve — and stop at the paywall rather than through it.
+   *
+   * Entitlements are re-read first, and a gated action renders the paywall
+   * instead of quietly placing a hold. Authorizing money is the athlete's act,
+   * not a side effect of pressing "solve": `buyThenSolve` below is the only
+   * path that calls checkout, and it runs from an explicit click.
+   *
+   * A 402 from the solve itself is caught for the same reason — it carries
+   * `required_tiers` and `purchasable_per_race` in `details`, so the paywall it
+   * renders offers the right upgrade rather than a generic wall.
+   */
+  const runSolve = async (opts: { carbOverride?: number | null; force?: boolean } = {}) => {
+    if (!planId) return;
+    setError(null);
+    try {
+      const rows = await entitlements.refetch();
+      const current = findEntitlement(rows.data, "solve_plan");
+      if (current && !current.allowed) return; // the paywall renders from `gate`
+      await solve.mutateAsync({
+        carb_override: opts.carbOverride ?? null,
+        force: opts.force ?? false,
+      });
+      await plan.refetch();
+    } catch (caught) {
+      if (caught instanceof ApiError) setError(caught);
+      else throw caught;
+    } finally {
+      await entitlements.refetch();
+    }
+  };
 
-  const pLabel = st.solved || st.step > 4 ? { clear: "CLEARS", tight: "TIGHT", fail: "INFEASIBLE" }[S] : "NOT SOLVED";
-  const pColor = st.solved || st.step > 4 ? panelCol : "#8C8578";
-  const panelSplits = [
-    { name: "Swim", target: "1:44/100m", time: fmtClock(swim), color: "#4F7C93" },
-    { name: "T1", target: "transition", time: fmtClock(t1), color: "#8C8578" },
-    { name: "Bike", target: "208 w", time: fmtClock(bike), color: "#E4622F" },
-    { name: "T2", target: "transition", time: fmtClock(t2), color: "#8C8578" },
-    { name: "Run", target: "6:12/km", time: fmtClock(run), color: "#64707A" },
-  ];
-  const panelNote = st.step === 1
-    ? "The panel fills in as you go. Nothing here is final until step 4 solves it."
-    : st.step < 4
-      ? "These are projections from your inputs, not a solved plan. Step 4 checks them against the real course."
-      : "Every number in this panel came out of the solver and can be traced to the constraint that produced it.";
+  /**
+   * The only place a hold is placed, and only from a click on the paywall.
+   *
+   * Two-phase: authorize puts a hold on the card, the solve captures it, and a
+   * solve that fails or comes back infeasible voids it instead. Nothing is
+   * charged for a plan that did not arrive.
+   */
+  const buyThenSolve = async () => {
+    if (!planId) return;
+    setError(null);
+    try {
+      await authorize.mutateAsync({ planId });
+      await solve.mutateAsync({ carb_override: carbOverride, force: false });
+      await plan.refetch();
+    } catch (caught) {
+      if (caught instanceof ApiError) setError(caught);
+      else throw caught;
+    } finally {
+      // The purchase happened even if the solve came back infeasible, so the
+      // entitlement table has moved on either way and the paywall must not
+      // linger over the verdict.
+      await entitlements.refetch();
+    }
+  };
 
-  const inputBoxStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 11, height: 46, padding: "0 14px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff" };
-  const cardStyle: React.CSSProperties = { background: "#FBF8F2", borderRadius: 12, padding: "24px 26px", boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" };
+  const canReach = (n: number) => n <= step || (n <= 4 && Boolean(planId)) || (n > 4 && Boolean(solved));
+
+  const filteredCourses = (courses.data?.data ?? []).filter((c) =>
+    courseQuery.trim() ? `${c.name} ${c.place}`.toLowerCase().includes(courseQuery.trim().toLowerCase()) : true,
+  );
+
+  // --- the right-hand panel -------------------------------------------------
+  const panelSplits = solved?.splits ?? [];
+  const panelGates = solved?.gates ?? [];
 
   return (
     <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320 }}>
@@ -216,11 +268,11 @@ export default function PlanBuilderPage() {
           <div style={{ display: "flex", alignItems: "center", flex: 1, justifyContent: "center" }}>
             {STEP_NAMES.map((name, i) => {
               const n = i + 1;
-              const done = n < st.step;
-              const cur = n === st.step;
-              const reachable = n <= st.step || st.solved || n <= 4;
+              const done = n < step;
+              const cur = n === step;
+              const reachable = canReach(n);
               return (
-                <div key={name} onClick={() => goTo(n)} style={{ display: "flex", alignItems: "center", cursor: reachable ? "pointer" : "not-allowed" }}>
+                <div key={name} onClick={() => reachable && setStep(n)} style={{ display: "flex", alignItems: "center", cursor: reachable ? "pointer" : "not-allowed" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "0 12px" }}>
                     <span className="mono" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: "50%", flex: "none", background: cur ? "#E4622F" : done ? "#15140F" : "transparent", border: `1px solid ${cur ? "#E4622F" : done ? "#15140F" : "rgba(21,20,15,.24)"}`, fontSize: 9.5, color: cur || done ? "#FBF8F2" : "#A8A192" }}>
                       {done ? "✓" : n}
@@ -233,7 +285,10 @@ export default function PlanBuilderPage() {
             })}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "none" }}>
-            <span className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "#A8A192", whiteSpace: "nowrap" }}>DRAFT SAVED · {wallClock(0)}</span>
+            {/* Real save state — the draft is a PATCH, not a timer. */}
+            <span className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "#A8A192", whiteSpace: "nowrap" }}>
+              {saveDraft.isPending ? "SAVING…" : planId ? "DRAFT SAVED" : "NOT STARTED"}
+            </span>
             <Link href={routes.dashboard} className="btn-outline-dark2" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 36, padding: "0 15px", border: "1px solid rgba(21,20,15,.18)", borderRadius: 6, fontSize: 13.5, fontWeight: 600 }}>
               Save and exit
             </Link>
@@ -243,194 +298,317 @@ export default function PlanBuilderPage() {
 
       <div style={{ maxWidth: 1440, margin: "0 auto", padding: "44px 48px 96px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 356px", gap: 40, alignItems: "start" }}>
         <div style={{ minWidth: 0 }}>
+          {/* An error that is not a verdict and not the paywall renders here. */}
+          {error && !infeasible && !paymentGate && (
+            <div style={{ marginBottom: 24 }}>
+              <ApiErrorState error={error} onRetry={() => setError(null)} />
+            </div>
+          )}
+
           {/* ---------------- Step 1: Race ---------------- */}
-          {st.step === 1 && (
+          {step === 1 && (
             <div>
               <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>STEP 1 OF 7</div>
               <h1 style={{ margin: "14px 0 0", fontSize: 46, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>Which race?</h1>
               <p style={{ margin: "14px 0 0", maxWidth: 520, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>
-                Pick it from the directory and you inherit the official course, cut-offs and aid stations. Upload a GPX if it is not listed.
+                Pick the course and tell us when you are racing it. You inherit its real route,
+                cut-offs and aid stations.
               </p>
+
               <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 16, marginTop: 34 }}>
                 <div style={cardStyle}>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>RACE</div>
+                  <div style={labelStyle}>COURSE</div>
                   <div style={{ ...inputBoxStyle, marginTop: 12 }}>
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flex: "none" }}><circle cx="7" cy="7" r="4.6" stroke="#8C8578" strokeWidth={1.5} /><path d="M10.6 10.6 14 14" stroke="#8C8578" strokeWidth={1.5} strokeLinecap="round" /></svg>
                     <input
                       type="text"
-                      value={st.query}
-                      onChange={(e) => setSt((s) => ({ ...s, query: e.target.value, picked: false }))}
-                      placeholder="Search 412 courses"
+                      value={courseQuery}
+                      onChange={(e) => setCourseQuery(e.target.value)}
+                      placeholder={courses.data ? `Search ${courses.data.meta.total} ${courses.data.meta.total === 1 ? "course" : "courses"}` : "Loading courses…"}
                       style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, outline: "none" }}
                     />
-                    {st.picked && <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", padding: "3px 7px", borderRadius: 3, background: "rgba(124,192,143,.18)", color: "#3E7B55", whiteSpace: "nowrap" }}>SELECTED</span>}
+                    {selectedCourse && <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", padding: "3px 7px", borderRadius: 3, background: "rgba(124,192,143,.18)", color: "#3E7B55", whiteSpace: "nowrap" }}>SELECTED</span>}
                   </div>
-                  {showResults && (
-                    <div style={{ marginTop: 8, border: "1px solid rgba(21,20,15,.12)", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
-                      {results.map((r) => (
-                        <div key={r.name} onClick={() => setSt((s) => ({ ...s, query: r.name, picked: true }))} className="result-row" style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 15px", borderBottom: "1px solid rgba(21,20,15,.07)", cursor: "pointer" }}>
-                          <span style={{ width: 5, height: 5, borderRadius: "50%", background: r.dot, flex: "none" }} />
-                          <span style={{ fontSize: 15, fontWeight: 500, letterSpacing: "-.018em" }}>{r.name}</span>
-                          <span className="mono" style={{ fontSize: 11, color: "#8C8578" }}>{r.date}</span>
-                          <span className="mono" style={{ marginLeft: "auto", fontSize: 8.5, letterSpacing: ".13em", color: "#A8A192", whiteSpace: "nowrap" }}>{r.prov}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578", marginTop: 26 }}>DISTANCE</div>
-                  <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
-                    {["Full", "70.3", "Olympic", "Sprint"].map((d) => {
-                      const sel = st.dist === d;
+
+                  <div style={{ marginTop: 8, border: "1px solid rgba(21,20,15,.12)", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
+                    {courses.isPending && [0, 1, 2].map((i) => (
+                      <div key={i} style={{ padding: "13px 15px", borderBottom: "1px solid rgba(21,20,15,.07)" }}><Skeleton width="70%" height={15} /></div>
+                    ))}
+                    {courses.error && <div style={{ padding: 14 }}><ApiErrorState error={courses.error} onRetry={() => void courses.refetch()} compact /></div>}
+                    {filteredCourses.map((c) => {
+                      const on = c.slug === courseSlug;
                       return (
-                        <div key={d} onClick={() => setSt((s) => ({ ...s, dist: d }))} className="row-hover-border" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", height: 42, borderRadius: 7, cursor: "pointer", background: sel ? "#15140F" : "#fff", border: `1px solid ${sel ? "#15140F" : "rgba(21,20,15,.16)"}`, fontSize: 14, fontWeight: sel ? 600 : 500, color: sel ? "#FBF8F2" : "#5C574B" }}>
-                          {d}
+                        <div
+                          key={c.id}
+                          onClick={() => { setCourseSlug(c.slug); setCourseQuery(""); }}
+                          className="result-row"
+                          style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 15px", borderBottom: "1px solid rgba(21,20,15,.07)", cursor: "pointer", background: on ? "rgba(228,98,47,.07)" : undefined }}
+                        >
+                          <span style={{ width: 5, height: 5, borderRadius: "50%", background: on ? "#E4622F" : "#C4BCAC", flex: "none" }} />
+                          <span style={{ fontSize: 15, fontWeight: 500, letterSpacing: "-.018em" }}>{c.name}</span>
+                          <span className="mono" style={{ fontSize: 11, color: "#8C8578" }}>{c.distance_type}</span>
+                          {/* Provenance as returned; no course claims OFFICIAL. */}
+                          <span className="mono" style={{ marginLeft: "auto", fontSize: 8.5, letterSpacing: ".13em", color: "#A8A192", whiteSpace: "nowrap" }}>{c.provenance ?? "UNVERIFIED"}</span>
                         </div>
                       );
                     })}
+                    {!courses.isPending && filteredCourses.length === 0 && (
+                      <div style={{ padding: "18px 15px", fontSize: 14, color: "#8C8578" }}>
+                        Nothing matches that. <Link href={routes.races} style={{ color: "#C6461B" }}>Browse the directory</Link>.
+                      </div>
+                    )}
                   </div>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578", marginTop: 26 }}>RACE DATE</div>
+
+                  <div style={{ ...labelStyle, marginTop: 26 }}>RACE DATE</div>
                   <div style={{ ...inputBoxStyle, marginTop: 12 }}>
-                    <span className="mono" style={{ fontSize: 15 }}>21 / 06 / 2026</span>
-                    <span className="mono" style={{ marginLeft: "auto", fontSize: 10, letterSpacing: ".12em", color: "#3E7B55" }}>+6 DAYS</span>
+                    <input
+                      type="date"
+                      value={eventDate}
+                      onChange={(e) => setEventDate(e.target.value)}
+                      style={{ flex: 1, border: 0, background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: 15, color: "#15140F", padding: 0, outline: "none" }}
+                    />
                   </div>
-                  <div className="upload-dash" style={{ marginTop: 22, padding: "16px 18px", border: "1px dashed rgba(21,20,15,.22)", borderRadius: 9, display: "flex", alignItems: "center", gap: 13, cursor: "pointer" }}>
-                    <svg width="17" height="17" viewBox="0 0 18 18" fill="none" style={{ flex: "none" }}><path d="M9 12.5V3.5M9 3.5 5.5 7M9 3.5 12.5 7" stroke="#8C8578" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" /><path d="M3 12v2.5h12V12" stroke="#8C8578" strokeWidth={1.5} strokeLinecap="round" /></svg>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 20 }}>
                     <div>
-                      <div style={{ fontSize: 14.5, fontWeight: 500, letterSpacing: "-.015em" }}>Course not listed? Upload a GPX</div>
-                      <div style={{ fontSize: 12.5, color: "#8C8578", marginTop: 3 }}>The plan still solves. Anything estimated is marked as estimated.</div>
+                      <div style={labelStyle}>START TIME</div>
+                      <div style={{ ...inputBoxStyle, marginTop: 12 }}>
+                        <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} style={{ flex: 1, border: 0, background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: 15, color: "#15140F", padding: 0, outline: "none" }} />
+                      </div>
+                    </div>
+                    <div>
+                      <div style={labelStyle}>BIB · OPTIONAL</div>
+                      <div style={{ ...inputBoxStyle, marginTop: 12 }}>
+                        <input type="text" value={bib} onChange={(e) => setBib(e.target.value)} placeholder="1421" style={{ flex: 1, border: 0, background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: 15, color: "#15140F", padding: 0, outline: "none" }} />
+                      </div>
                     </div>
                   </div>
                 </div>
 
+                {/* Course preview: the real elevation profile of the selected course. */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                   <div style={cardStyle}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>COURSE PREVIEW</span>
-                      <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 8.5, letterSpacing: ".13em", color: "#3E7B55" }}>
-                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#7CC08F" }} />OFFICIAL
-                      </span>
+                      <span style={labelStyle}>COURSE PREVIEW</span>
+                      {selectedCourse && (
+                        <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 8.5, letterSpacing: ".13em", color: "#A0701A" }}>
+                          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#E0A33C" }} />{selectedCourse.provenance ?? "UNVERIFIED"}
+                        </span>
+                      )}
                     </div>
-                    <svg viewBox="0 0 420 92" style={{ display: "block", width: "100%", marginTop: 16 }}>
-                      <path d={prevArea} fill="rgba(228,98,47,.13)" />
-                      <path d={prevLine} fill="none" stroke="#E4622F" strokeWidth={1.6} strokeLinejoin="round" />
-                      <line x1={0} y1={86} x2={420} y2={86} stroke="rgba(21,20,15,.14)" strokeWidth={1} />
-                    </svg>
+                    {(() => {
+                      const bike = recon.data?.elevation_profile?.legs?.BIKE;
+                      const chart = bike ? elevationPath(bike, { width: 420, top: 10, bottom: 84 }) : null;
+                      if (!courseSlug) return <div style={{ marginTop: 16, fontSize: 14, color: "#8C8578" }}>Pick a course and its real profile appears here.</div>;
+                      if (recon.isPending) return <Skeleton width="100%" height={92} style={{ marginTop: 16 }} />;
+                      if (!chart) return <div style={{ marginTop: 16, fontSize: 14, color: "#8C8578" }}>No bike profile in this bundle.</div>;
+                      return (
+                        <svg viewBox="0 0 420 92" style={{ display: "block", width: "100%", marginTop: 16 }} role="img" aria-label="Bike elevation profile">
+                          <path d={chart.area} fill="rgba(228,98,47,.13)" />
+                          <path d={chart.line} fill="none" stroke="#E4622F" strokeWidth={1.6} strokeLinejoin="round" />
+                          <line x1={0} y1={86} x2={420} y2={86} stroke="rgba(21,20,15,.14)" strokeWidth={1} />
+                        </svg>
+                      );
+                    })()}
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, marginTop: 18, paddingTop: 16, borderTop: "1px solid rgba(21,20,15,.08)" }}>
-                      <div><div className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#A8A192" }}>SWIM</div><div className="mono" style={{ fontSize: 16, marginTop: 6 }}>{cSwim}</div></div>
-                      <div><div className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#A8A192" }}>BIKE</div><div className="mono" style={{ fontSize: 16, marginTop: 6 }}>{cBike}</div></div>
-                      <div><div className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#A8A192" }}>RUN</div><div className="mono" style={{ fontSize: 16, marginTop: 6 }}>{cRun}</div></div>
+                      {(["SWIM", "BIKE", "RUN"] as const).map((leg) => {
+                        const row = recon.data?.legs.find((l) => l.leg === leg);
+                        return (
+                          <div key={leg}>
+                            <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#A8A192" }}>{leg}</div>
+                            <div className="mono" style={{ fontSize: 16, marginTop: 6 }}>
+                              {row ? `${formatKm(row.distance_m)} km` : recon.isPending && courseSlug ? <Skeleton width="6ch" height={16} /> : "—"}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
+                    <OsmAttribution attribution={recon.data?.bundle.attribution} style={{ marginTop: 14 }} />
                   </div>
+
+                  {/* The forecast comes with the solved plan, not before it. */}
                   <div style={cardStyle}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>FORECAST · DISPLAY ONLY</span>
-                      <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#A8A192" }}>62% CONFIDENCE AT 6 DAYS</span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 16 }}>
-                      <span className="mono" style={{ fontSize: 44, lineHeight: 0.85, letterSpacing: "-.045em" }}>31°</span>
-                      <span style={{ fontSize: 14, color: "#6B6455" }}>21 km/h NE · water 23.1°</span>
-                    </div>
-                    <div style={{ marginTop: 16, padding: "13px 15px", borderRadius: 8, background: "rgba(21,20,15,.04)", fontSize: 13, lineHeight: 1.5, color: "#5C574B" }}>
-                      This far out the plan solves against eleven editions of history. The forecast replaces it at 72 hours.
-                    </div>
+                    <div style={labelStyle}>CUT-OFFS ON THIS COURSE</div>
+                    {recon.data ? (
+                      <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                        {recon.data.barriers.map((b) => (
+                          <div key={b.name} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+                            <span style={{ fontSize: 14, color: "#3D3A31" }}>{b.name.replace(/_/g, " ")}</span>
+                            <span className="mono" style={{ fontSize: 14 }}>{formatClock(b.limit_minutes_from_start)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: 14, fontSize: 14, color: "#8C8578" }}>
+                        {courseSlug ? "Loading the bundle…" : "Pick a course to see its barriers."}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
+
+              <StepFooter
+                onNext={startPlan}
+                nextLabel={busy ? "Starting…" : "Start this plan"}
+                nextDisabled={!courseSlug || busy}
+              />
             </div>
           )}
 
           {/* ---------------- Step 2: Fitness ---------------- */}
-          {st.step === 2 && (
+          {step === 2 && (
             <div>
               <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>STEP 2 OF 7</div>
               <h1 style={{ margin: "14px 0 0", fontSize: 46, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>What can you hold?</h1>
-              <p style={{ margin: "14px 0 0", maxWidth: 520, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>
-                Every field takes a number, a file, or two plain questions. No field is required, and nothing is gated behind connecting an account.
+              <p style={{ margin: "14px 0 0", maxWidth: 560, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>
+                Every field takes a number you already trust, or two plain questions. Nothing is
+                required, and nothing is gated behind connecting an account.
               </p>
 
               <div style={{ background: "#FBF8F2", borderRadius: 12, padding: "8px 28px 24px", marginTop: 34, boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                <div className="mono" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1.1fr 130px", gap: 18, padding: "20px 0 12px", fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192", borderBottom: "1px solid rgba(21,20,15,.1)" }}>
+                <div className="mono" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1.1fr 150px", gap: 18, padding: "20px 0 12px", fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192", borderBottom: "1px solid rgba(21,20,15,.1)" }}>
                   <span>METRIC</span><span>VALUE</span><span>SOURCE</span><span style={{ textAlign: "right" }}>IF YOU DO NOT KNOW</span>
                 </div>
-                {[
-                  { name: "Swim threshold pace", value: "1:38", unit: "/100m", dot: "#4F7C93", source: "TESTED", srcBg: "rgba(124,192,143,.16)", srcFg: "#3E7B55", canEstimate: true, locked: false },
-                  { name: "Bike threshold power", value: st.splitImported ? "LOCKED" : "293", unit: st.splitImported ? "" : "w", dot: "#E4622F", source: st.splitImported ? "IMPORTED" : "TESTED", srcBg: st.splitImported ? "rgba(228,98,47,.16)" : "rgba(124,192,143,.16)", srcFg: st.splitImported ? "#C6461B" : "#3E7B55", canEstimate: !st.splitImported, locked: st.splitImported },
-                  { name: "Run threshold pace", value: "4:42", unit: "/km", dot: "#64707A", source: "TESTED", srcBg: "rgba(124,192,143,.16)", srcFg: "#3E7B55", canEstimate: true, locked: false },
-                  { name: "Weight", value: "68", unit: "kg", dot: "#C4BCAC", source: "MANUAL", srcBg: "rgba(21,20,15,.07)", srcFg: "#5C574B", canEstimate: false, locked: false },
-                  { name: "Sweat rate", value: "1.3", unit: "L/hr", dot: "#C4BCAC", source: "ESTIMATED", srcBg: "rgba(224,163,60,.18)", srcFg: "#A0701A", canEstimate: true, locked: false },
-                  { name: "Gut carbohydrate ceiling", value: "90", unit: "g/hr", dot: "#C4BCAC", source: "MEASURED", srcBg: "rgba(124,192,143,.16)", srcFg: "#3E7B55", canEstimate: true, locked: false },
-                ].map((f) => (
-                  <div key={f.name} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1.1fr 130px", gap: 18, padding: "16px 0", borderBottom: "1px solid rgba(21,20,15,.07)", alignItems: "center" }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: f.dot, flex: "none" }} />
-                      <span style={{ fontSize: 15.5, fontWeight: 500, letterSpacing: "-.018em" }}>{f.name}</span>
-                      {f.locked && <svg width="10" height="11" viewBox="0 0 12 13" fill="none" style={{ flex: "none" }}><rect x="1.5" y="5.5" width="9" height="6.5" rx="1.5" stroke="#C6461B" strokeWidth={1.4} /><path d="M3.8 5.5V3.9a2.2 2.2 0 0 1 4.4 0v1.6" stroke="#C6461B" strokeWidth={1.4} /></svg>}
-                    </span>
-                    <span style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                      <span className="mono" style={{ fontSize: 18, letterSpacing: "-.02em" }}>{f.value}</span>
-                      <span className="mono" style={{ fontSize: 11, color: "#8C8578" }}>{f.unit}</span>
-                    </span>
-                    <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", padding: "4px 8px", borderRadius: 4, justifySelf: "start", whiteSpace: "nowrap", background: f.srcBg, color: f.srcFg }}>{f.source}</span>
-                    <span style={{ textAlign: "right" }}>{f.canEstimate && <span className="mono link-accent" style={{ fontSize: 9, letterSpacing: ".12em", color: "#C6461B", cursor: "pointer", whiteSpace: "nowrap" }}>ESTIMATE IT →</span>}</span>
-                  </div>
-                ))}
+
+                {/* All eight. The prototype showed six — sodium_loss and
+                    caffeine_tolerance were missing entirely. */}
+                {CONSTRAINT_KEYS.map((key) => {
+                  const row = byKey.get(key);
+                  const source = row?.source;
+                  const style = source ? SOURCE_STYLE[source] : { bg: "rgba(21,20,15,.05)", fg: "#A8A192" };
+                  const hasEstimator = Boolean(ESTIMATORS[key]);
+                  return (
+                    <div key={key}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1.1fr 150px", gap: 18, padding: "16px 0", borderBottom: "1px solid rgba(21,20,15,.07)", alignItems: "center" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{ width: 5, height: 5, borderRadius: "50%", background: row ? "#E4622F" : "#C4BCAC", flex: "none" }} />
+                          <span style={{ fontSize: 15.5, fontWeight: 500, letterSpacing: "-.018em" }}>{CONSTRAINT_LABELS[key]}</span>
+                          {row?.stale && <span className="mono" style={{ fontSize: 8, letterSpacing: ".12em", padding: "2px 6px", borderRadius: 3, background: "rgba(224,163,60,.18)", color: "#A0701A" }}>STALE</span>}
+                        </span>
+                        <span
+                          onClick={() => { setEditingConstraint(key); setManualValue(row ? String(row.value) : ""); setEstimatorFor(null); }}
+                          style={{ display: "flex", alignItems: "baseline", gap: 5, cursor: "pointer" }}
+                        >
+                          {constraints.isPending ? (
+                            <Skeleton width="4ch" height={18} />
+                          ) : (
+                            <>
+                              <span className="mono" style={{ fontSize: 18, letterSpacing: "-.02em", color: row ? "#15140F" : "#C4BCAC" }}>{row ? row.value : "—"}</span>
+                              <span className="mono" style={{ fontSize: 11, color: "#8C8578" }}>{row?.unit ?? CONSTRAINT_UNITS[key]}</span>
+                            </>
+                          )}
+                        </span>
+                        <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", padding: "4px 8px", borderRadius: 4, justifySelf: "start", whiteSpace: "nowrap", background: style.bg, color: style.fg }}>
+                          {source ? SOURCE_LABELS[source] : "NOT SET"}
+                        </span>
+                        <span style={{ textAlign: "right", display: "flex", gap: 14, justifyContent: "flex-end" }}>
+                          <span
+                            onClick={() => { setEditingConstraint(key); setManualValue(row ? String(row.value) : ""); setEstimatorFor(null); }}
+                            className="mono link-accent"
+                            style={{ fontSize: 9, letterSpacing: ".12em", color: "#8C8578", cursor: "pointer", whiteSpace: "nowrap" }}
+                          >
+                            ENTER →
+                          </span>
+                          {hasEstimator && (
+                            <span
+                              onClick={() => { setEstimatorFor(key); setEditingConstraint(null); setAnswers({}); }}
+                              className="mono link-accent"
+                              style={{ fontSize: 9, letterSpacing: ".12em", color: "#C6461B", cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              ESTIMATE IT →
+                            </span>
+                          )}
+                        </span>
+                      </div>
+
+                      {editingConstraint === key && (
+                        <ManualEntry
+                          unit={row?.unit ?? CONSTRAINT_UNITS[key]}
+                          value={manualValue}
+                          onChange={setManualValue}
+                          busy={writeConstraint.isPending}
+                          onCancel={() => setEditingConstraint(null)}
+                          onSave={async () => {
+                            const value = Number(manualValue);
+                            if (!Number.isFinite(value)) return;
+                            setError(null);
+                            try {
+                              // `manual` — a number the athlete already trusts.
+                              // `measured` comes only from post-race calibration.
+                              await writeConstraint.mutateAsync({ key, value, source: "manual" });
+                              setEditingConstraint(null);
+                            } catch (caught) {
+                              if (caught instanceof ApiError) setError(caught);
+                              else throw caught;
+                            }
+                          }}
+                        />
+                      )}
+
+                      {estimatorFor === key && (
+                        <Estimator
+                          fields={ESTIMATORS[key] ?? []}
+                          answers={answers}
+                          onChange={setAnswers}
+                          busy={estimate.isPending}
+                          onCancel={() => setEstimatorFor(null)}
+                          onSubmit={async () => {
+                            setError(null);
+                            const payload: Record<string, unknown> = {};
+                            for (const f of ESTIMATORS[key] ?? []) {
+                              const raw = answers[f.name];
+                              payload[f.name] = f.type === "boolean" ? Boolean(raw) : Number(raw);
+                            }
+                            try {
+                              await estimate.mutateAsync({ key, answers: payload });
+                              setEstimatorFor(null);
+                            } catch (caught) {
+                              if (caught instanceof ApiError) setError(caught);
+                              else throw caught;
+                            }
+                          }}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
-              <div onClick={() => setSt((s) => ({ ...s, splitImported: !s.splitImported }))} style={{ marginTop: 16, borderRadius: 12, padding: "24px 28px", cursor: "pointer", background: st.splitImported ? "#15140F" : "#FBF8F2", border: `1px solid ${st.splitImported ? "#15140F" : "rgba(21,20,15,.1)"}` }}>
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 32 }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: st.splitImported ? "#E4622F" : "#C4BCAC" }} />
-                      <span className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: st.splitImported ? "#E4622F" : "#8C8578" }}>{st.splitImported ? "ACTIVE · BIKE POWER LOCKED" : "OPTIONAL"}</span>
-                    </div>
-                    <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-.028em", marginTop: 11, color: st.splitImported ? "#FBF8F2" : "#15140F" }}>Import a bike split you already trust</div>
-                    <p style={{ margin: "8px 0 0", maxWidth: 600, fontSize: 14.5, lineHeight: 1.55, color: st.splitImported ? "rgba(251,248,242,.55)" : "#5C574B" }}>
-                      {st.splitImported
-                        ? "Your bike power is now a fixed constraint. Pacing, fuelling and every cut-off margin will be solved around it rather than re-derived."
-                        : "If another tool already gave you a bike split you believe, we will lock it as a constraint instead of computing our own."}
-                    </p>
-                  </div>
-                  <span style={{ display: "flex", alignItems: "center", justifyContent: st.splitImported ? "flex-end" : "flex-start", width: 44, height: 26, borderRadius: 13, flex: "none", background: st.splitImported ? "#E4622F" : "rgba(21,20,15,.16)", padding: 3 }}>
-                    <span style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(21,20,15,.3)" }} />
-                  </span>
-                </div>
+              <div style={{ marginTop: 16, borderRadius: 12, padding: "24px 28px", background: "#FBF8F2", border: "1px solid rgba(21,20,15,.1)" }}>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>WHERE A NUMBER CAN COME FROM</div>
+                <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-.028em", marginTop: 11 }}>Enter a number you already trust</div>
+                <p style={{ margin: "8px 0 0", maxWidth: 640, fontSize: 14.5, lineHeight: 1.55, color: "#5C574B" }}>
+                  A value you tested, or one another tool gave you and you believe, is entered by
+                  hand and marked <span className="mono" style={{ fontSize: 12 }}>MANUAL</span> — it carries full
+                  weight in the solver. There is no pre-race file upload:
+                  <span className="mono" style={{ fontSize: 12 }}> MEASURED</span> is reserved for values
+                  calibrated from a race file after you have raced.
+                </p>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginTop: 16 }}>
-                {[
-                  { name: "SWIM", target: "1:44/100m", note: "Threshold plus 6s for open water", color: "#4F7C93", tint: "rgba(79,124,147,.13)" },
-                  { name: "BIKE", target: st.splitImported ? "Imported" : "208 w", note: st.splitImported ? "Locked as given" : "0.71 of threshold", color: "#E4622F", tint: "rgba(228,98,47,.13)" },
-                  { name: "RUN", target: "6:12/km", note: "Threshold plus heat adjustment", color: "#64707A", tint: "rgba(100,112,122,.13)" },
-                ].map((z) => (
-                  <div key={z.name} style={{ background: "#FBF8F2", borderRadius: 11, padding: "20px 22px", boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                      <span style={{ width: 20, height: 20, borderRadius: 5, background: z.tint, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}><span style={{ width: 8, height: 8, borderRadius: 2, background: z.color }} /></span>
-                      <span className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578" }}>{z.name}</span>
-                    </div>
-                    <div className="mono" style={{ fontSize: 22, letterSpacing: "-.03em", marginTop: 14 }}>{z.target}</div>
-                    <div style={{ fontSize: 12.5, color: "#8C8578", marginTop: 7 }}>{z.note}</div>
-                  </div>
-                ))}
-              </div>
+              <StepFooter onBack={() => setStep(1)} onNext={() => setStep(3)} nextLabel="Set the goal" />
             </div>
           )}
 
           {/* ---------------- Step 3: Goal ---------------- */}
-          {st.step === 3 && (
+          {step === 3 && (
             <div>
               <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>STEP 3 OF 7</div>
               <h1 style={{ margin: "14px 0 0", fontSize: 46, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>What are you racing for?</h1>
-              <p style={{ margin: "14px 0 0", maxWidth: 520, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>This changes what the solver protects. Finishing safely and chasing a personal best are different problems.</p>
+              <p style={{ margin: "14px 0 0", maxWidth: 520, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>
+                This changes what the solver protects. Finishing safely and chasing a personal best
+                are different problems.
+              </p>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginTop: 34 }}>
-                {[
-                  { k: "safe" as GoalType, kicker: "CONSERVATIVE", name: "Finish safely", desc: "The solver protects every cut-off first and optimises nothing else." },
-                  { k: "time" as GoalType, kicker: "TARGETED", name: "Time target", desc: "A specific finish time, with the plan built to hold it honestly." },
-                  { k: "pb" as GoalType, kicker: "AGGRESSIVE", name: "Personal best", desc: "Maximum sustainable effort, with margins deliberately thinner." },
-                ].map((g) => {
-                  const on = st.goalType === g.k;
+                {([
+                  { k: "conservative" as RiskLevel, kicker: "CONSERVATIVE", name: "Finish safely", desc: "Wider margins. The solver protects every cut-off first." },
+                  { k: "balanced" as RiskLevel, kicker: "BALANCED", name: "Time target", desc: "The default for most athletes: a target held honestly." },
+                  { k: "aggressive" as RiskLevel, kicker: "AGGRESSIVE", name: "Personal best", desc: "Maximum sustainable effort, with margins deliberately thinner." },
+                ]).map((g) => {
+                  const on = risk === g.k;
                   return (
-                    <div key={g.k} onClick={() => setSt((s) => ({ ...s, goalType: g.k }))} style={{ borderRadius: 12, padding: "24px 26px 26px", cursor: "pointer", background: on ? "#15140F" : "#FBF8F2", border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.1)"}` }}>
+                    <div key={g.k} onClick={() => setRisk(g.k)} style={{ borderRadius: 12, padding: "24px 26px 26px", cursor: "pointer", background: on ? "#15140F" : "#FBF8F2", border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.1)"}` }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <span className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: on ? "#E4622F" : "#8C8578" }}>{g.kicker}</span>
                         <span style={{ width: 16, height: 16, borderRadius: "50%", border: `1px solid ${on ? "#E4622F" : "rgba(21,20,15,.24)"}`, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
@@ -446,463 +624,615 @@ export default function PlanBuilderPage() {
 
               <div style={{ background: "#FBF8F2", borderRadius: 12, padding: "28px 30px", marginTop: 16, boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-                  <span className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>GOAL FINISH TIME</span>
-                  <span className="mono" style={{ fontSize: 38, letterSpacing: "-.04em" }}>{fmtClock(G)}:00</span>
+                  <span style={labelStyle}>GOAL FINISH TIME</span>
+                  <span className="mono" style={{ fontSize: 38, letterSpacing: "-.04em" }}>{formatClock(effectiveGoal)}:00</span>
                 </div>
-                <input type="range" min={540} max={1020} step={5} value={G} onChange={(e) => setSt((s) => ({ ...s, goal: +e.target.value, solved: false }))} style={{ width: "100%", margin: "20px 0 8px", height: 18 }} />
-                <div className="mono" style={{ position: "relative", height: 15, fontSize: 9.5, letterSpacing: ".11em", color: "#A8A192" }}>
-                  <span style={{ position: "absolute", left: 0 }}>09:00</span>
-                  <span style={{ position: "absolute", left: "37.5%", transform: "translateX(-50%)" }}>13:00</span>
-                  <span style={{ position: "absolute", left: "87.5%", transform: "translateX(-50%)", color: "#C0392B" }}>16:00</span>
-                  <span style={{ position: "absolute", right: 0 }}>17:00</span>
+                {/* Bounds from the course's own barriers, not a guessed range. */}
+                <input
+                  type="range"
+                  min={Math.round(finishLimit * 0.45)}
+                  max={Math.round(finishLimit * 1.1)}
+                  step={5}
+                  value={effectiveGoal}
+                  onChange={(e) => setGoalMinutes(+e.target.value)}
+                  aria-label="Goal finish time in minutes"
+                  style={{ width: "100%", margin: "20px 0 8px", height: 18 }}
+                />
+                <div className="mono" style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, letterSpacing: ".11em", color: "#A8A192" }}>
+                  <span>{formatClock(Math.round(finishLimit * 0.45))}</span>
+                  <span style={{ color: "#C0392B" }}>{formatClock(finishLimit)} FINISH CUT-OFF</span>
+                  <span>{formatClock(Math.round(finishLimit * 1.1))}</span>
                 </div>
-                <div style={{ position: "relative", height: 13 }}>
-                  <span style={{ position: "absolute", left: "87.5%", top: -16, width: 1, height: 8, background: "rgba(192,57,43,.55)" }} />
-                  <span className="mono" style={{ position: "absolute", left: "87.5%", top: 0, transform: "translateX(-50%)", whiteSpace: "nowrap", fontSize: 9, letterSpacing: ".13em", color: "#C0392B" }}>FINISH CUT-OFF</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 26, padding: "16px 18px", borderRadius: 9, background: S === "fail" ? "rgba(192,57,43,.08)" : S === "tight" ? "rgba(224,163,60,.1)" : "rgba(21,20,15,.04)", border: `1px solid ${S === "fail" ? "rgba(192,57,43,.32)" : S === "tight" ? "rgba(224,163,60,.34)" : "rgba(21,20,15,.08)"}` }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: S === "fail" ? "#C0392B" : S === "tight" ? "#E0A33C" : "#7CC08F", flex: "none" }} />
-                  <span style={{ fontSize: 14.5, lineHeight: 1.45, color: "#3D3A31" }}>
-                    {S === "fail"
-                      ? "This implies a bike power you have not held in training. You can proceed — the plan will show you exactly where it breaks."
-                      : S === "tight"
-                        ? "Achievable, but the margin on the " + tight.name.toLowerCase() + " is under twenty minutes. One puncture and this becomes a decision made under pressure."
-                        : "Consistent with your tested numbers. The implied bike is 0.71 of threshold, which you have held for six hours before."}
+                <p style={{ margin: "22px 0 0", fontSize: 14.5, lineHeight: 1.5, color: "#6B6455" }}>
+                  Nothing is judged here. The next step solves this goal against the real course and
+                  your own numbers, and tells you whether it holds.
+                </p>
+              </div>
+
+              <div onClick={() => setNightFlag((n) => !n)} style={{ borderRadius: 12, padding: "26px 28px", marginTop: 16, cursor: "pointer", background: nightFlag ? "rgba(228,98,47,.07)" : "#FBF8F2", border: `1px solid ${nightFlag ? "rgba(228,98,47,.36)" : "rgba(21,20,15,.1)"}` }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20 }}>
+                  <div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>FINISHING IN THE DARK</div>
+                    <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-.025em", marginTop: 11 }}>Plan for a night finish</div>
+                    <p style={{ margin: "7px 0 0", maxWidth: 520, fontSize: 13, lineHeight: 1.5, color: "#6B6455" }}>
+                      Adds the kit a finish after dusk needs to the run bags.
+                    </p>
+                  </div>
+                  <span style={{ display: "flex", alignItems: "center", justifyContent: nightFlag ? "flex-end" : "flex-start", width: 44, height: 26, borderRadius: 13, flex: "none", background: nightFlag ? "#E4622F" : "rgba(21,20,15,.16)", padding: 3 }}>
+                    <span style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(21,20,15,.3)" }} />
                   </span>
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.3fr) minmax(0,1fr)", gap: 16, marginTop: 16 }}>
-                <div style={cardStyle}>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>RISK TOLERANCE</div>
-                  <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
-                    {[
-                      { k: "Conservative" as Risk, d: "Wider margins, slower plan" },
-                      { k: "Balanced" as Risk, d: "The default for most athletes" },
-                      { k: "Aggressive" as Risk, d: "Thin margins, no contingency" },
-                    ].map((r) => {
-                      const sel = st.risk === r.k;
-                      return (
-                        <div key={r.k} onClick={() => setSt((s) => ({ ...s, risk: r.k }))} className="row-hover-border" style={{ flex: 1, padding: "15px 16px", borderRadius: 8, cursor: "pointer", background: sel ? "#15140F" : "#fff", border: `1px solid ${sel ? "#15140F" : "rgba(21,20,15,.14)"}` }}>
-                          <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-.02em", color: sel ? "#FBF8F2" : "#15140F" }}>{r.k}</div>
-                          <div style={{ fontSize: 12.5, lineHeight: 1.4, color: sel ? "rgba(251,248,242,.5)" : "#8C8578", marginTop: 6 }}>{r.d}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div onClick={() => setSt((s) => ({ ...s, firstTimer: !s.firstTimer }))} style={{ borderRadius: 12, padding: "26px 28px", cursor: "pointer", background: st.firstTimer ? "rgba(228,98,47,.07)" : "#FBF8F2", border: `1px solid ${st.firstTimer ? "rgba(228,98,47,.36)" : "rgba(21,20,15,.1)"}` }}>
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20 }}>
-                    <div>
-                      <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>FIRST IRON DISTANCE</div>
-                      <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-.025em", marginTop: 11 }}>This is my first one</div>
-                      <p style={{ margin: "7px 0 0", fontSize: 13, lineHeight: 1.5, color: "#6B6455" }}>Adds beginner bag items, paces more conservatively, and expands the cut-off guidance.</p>
-                    </div>
-                    <span style={{ display: "flex", alignItems: "center", justifyContent: st.firstTimer ? "flex-end" : "flex-start", width: 44, height: 26, borderRadius: 13, flex: "none", background: st.firstTimer ? "#E4622F" : "rgba(21,20,15,.16)", padding: 3 }}>
-                      <span style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(21,20,15,.3)" }} />
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <StepFooter
+                onBack={() => setStep(2)}
+                onNext={saveGoalAndSolve}
+                nextLabel={busy ? "Solving…" : "Solve this plan"}
+                nextDisabled={busy}
+              />
             </div>
           )}
 
-          {/* ---------------- Step 4: Feasibility (solve) ---------------- */}
-          {st.step === 4 && (
+          {/* ---------------- Step 4: Feasibility ---------------- */}
+          {step === 4 && (
             <div>
               <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>STEP 4 OF 7</div>
-              <h1 style={{ margin: "14px 0 0", fontSize: 46, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>{st.solving ? "Solving." : "It holds."}</h1>
+              <h1 style={{ margin: "14px 0 0", fontSize: 46, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>
+                {solve.isPending ? "Solving." : infeasible ? "Not at this goal." : paymentGate || gate ? "One step first." : solved ? "It holds." : "Ready to solve."}
+              </h1>
 
-              {st.solving && (
-                <div style={{ background: "#FBF8F2", borderRadius: 12, padding: "36px 38px 34px", marginTop: 30, boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
+              {/*
+                An indeterminate spinner, because the solve is synchronous and
+                returns the finished plan. The prototype showed seven named
+                stages on a setTimeout; the backend has no per-stage progress to
+                report, so inventing one would be theatre.
+              */}
+              {solve.isPending && (
+                <div style={{ background: "#FBF8F2", borderRadius: 12, padding: "36px 38px", marginTop: 30, boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <span style={{ display: "block", width: 15, height: 15, borderRadius: "50%", border: "2px solid rgba(228,98,47,.25)", borderTopColor: "#E4622F", animation: "spin .8s linear infinite", flex: "none" }} />
-                    <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".16em", color: "#8C8578" }}>SOLVING · {Math.round((st.stage / SOLVE_STAGES.length) * 100)}%</span>
+                    <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".16em", color: "#8C8578" }}>SOLVING</span>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", marginTop: 26 }}>
-                    {SOLVE_STAGES.map((name, i) => {
-                      const done = i < st.stage;
-                      const cur = i === st.stage;
-                      return (
-                        <div key={name} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 0" }}>
-                          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 17, height: 17, borderRadius: "50%", flex: "none", background: done ? "#5C9E72" : "transparent", border: `1px solid ${done ? "#5C9E72" : cur ? "#E4622F" : "rgba(21,20,15,.18)"}` }}>
-                            {done && <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M2.5 6.2 4.8 8.5 9.5 3.8" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></svg>}
-                          </span>
-                          <span style={{ fontSize: 15.5, color: i <= st.stage ? "#15140F" : "#A8A192" }}>{name}</span>
-                          <span className="mono" style={{ marginLeft: "auto", fontSize: 10.5, color: "#C4BCAC" }}>{done ? 380 + i * 40 + "ms" : ""}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <p style={{ margin: "20px 0 0", maxWidth: 520, fontSize: 15, lineHeight: 1.55, color: "#5C574B" }}>
+                    The solver runs the whole plan at once and returns it finished. Nothing is
+                    charged until it succeeds.
+                  </p>
                 </div>
               )}
 
-              {st.solved && (
+              {!solve.isPending && infeasible && error && (
                 <div style={{ marginTop: 26 }}>
-                  <div style={{ borderRadius: 12, padding: "30px 32px", background: S === "clear" ? "rgba(124,192,143,.1)" : S === "tight" ? "rgba(224,163,60,.11)" : "rgba(192,57,43,.09)", border: `1px solid ${S === "clear" ? "rgba(124,192,143,.4)" : S === "tight" ? "rgba(224,163,60,.4)" : "rgba(192,57,43,.34)"}` }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: col }} />
-                      <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: col }}>{{ clear: "CLEARS EVERY CUT-OFF", tight: "TIGHT · ONE BINDING BARRIER", fail: "INFEASIBLE AS SET" }[S]}</span>
-                    </div>
-                    <p style={{ margin: "15px 0 0", maxWidth: 640, fontSize: 30, lineHeight: 1.16, fontWeight: 500, letterSpacing: "-.035em" }}>
-                      {failing
-                        ? "You miss the " + failing.name.toLowerCase() + " by " + fmtClock(failing.eta - failing.limit) + "."
-                        : "You clear the " + tight.name.toLowerCase() + " with " + fmtClock(worst) + " in hand."}
-                    </p>
-                    <p style={{ margin: "12px 0 0", maxWidth: 600, fontSize: 15, lineHeight: 1.55, color: "#5C574B" }}>
-                      {failing
-                        ? "Held at your gut ceiling and threshold power, the plan cannot reach that barrier in time. Two levers would change it: bike power, and time lost in transition."
-                        : "Solved against course bundle v2026.2 and a forecast 31°C. Every value below traces to a constraint you can inspect."}
-                    </p>
-                  </div>
-
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginTop: 14 }}>
-                    {[
-                      { name: "SWIM", target: "1:44", unit: "/100m", split: fmtClock(swim), note: "Non-wetsuit", color: "#4F7C93", tint: "rgba(79,124,147,.13)" },
-                      { name: "BIKE", target: "208", unit: "w", split: fmtClock(bike), note: "0.71 IF", color: "#E4622F", tint: "rgba(228,98,47,.13)" },
-                      { name: "RUN", target: "6:12", unit: "/km", split: fmtClock(run), note: "Heat adjusted", color: "#64707A", tint: "rgba(100,112,122,.13)" },
-                    ].map((d) => (
-                      <div key={d.name} style={{ background: "#FBF8F2", borderRadius: 11, padding: "22px 24px 20px", boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                            <span style={{ width: 20, height: 20, borderRadius: 5, background: d.tint, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}><span style={{ width: 8, height: 8, borderRadius: 2, background: d.color }} /></span>
-                            <span className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578" }}>{d.name}</span>
-                          </span>
-                          <span className="mono link-accent" style={{ fontSize: 9, letterSpacing: ".11em", color: "#C6461B", cursor: "pointer" }}>ADJUST</span>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 16 }}>
-                          <span className="mono" style={{ fontSize: 30, letterSpacing: "-.035em" }}>{d.target}</span>
-                          <span className="mono" style={{ fontSize: 11, color: "#8C8578" }}>{d.unit}</span>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(21,20,15,.08)" }}>
-                          <span style={{ fontSize: 13, color: "#8C8578" }}>{d.note}</span>
-                          <span className="mono" style={{ fontSize: 15 }}>{d.split}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ background: "#FBF8F2", borderRadius: 12, padding: "24px 28px 20px", marginTop: 14, boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                    <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>ELEVATION WITH PACING OVERLAY</div>
-                    <svg viewBox="0 0 900 150" style={{ display: "block", width: "100%", marginTop: 14 }}>
-                      {overlayBands.map((b, i) => (
-                        <g key={i}>
-                          <rect x={b.x} y={6} width={b.w} height={118} fill={b.fill} />
-                          <text x={b.cx} y={140} textAnchor="middle" fill="#A8A192" fontFamily="JetBrains Mono, monospace" fontSize={9.5}>{b.w2}</text>
-                        </g>
-                      ))}
-                      <path d={ovArea} fill="rgba(228,98,47,.12)" />
-                      <path d={ovLine} fill="none" stroke="#E4622F" strokeWidth={1.6} strokeLinejoin="round" />
-                      <line x1={0} y1={124} x2={900} y2={124} stroke="rgba(21,20,15,.14)" strokeWidth={1} />
-                    </svg>
-                  </div>
-
-                  <div style={{ background: "#FBF8F2", borderRadius: 12, padding: "24px 28px 22px", marginTop: 14, boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                    <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>CUT-OFF CLOCK</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginTop: 16 }}>
-                      {clockCards.map((c) => (
-                        <div key={c.name} style={{ borderRadius: 9, padding: "17px 18px", background: c.bg, border: `1px solid ${c.border}` }}>
-                          <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#6B6455" }}>{c.name}</div>
-                          <div className="mono" style={{ fontSize: 24, letterSpacing: "-.035em", marginTop: 12, color: c.color }}>{c.margin}</div>
-                          <div className="mono" style={{ fontSize: 9, color: "#A8A192", marginTop: 8 }}>{c.eta} / {c.limit}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  <FeasibilityVerdict
+                    details={infeasible}
+                    message={error.message}
+                    requestId={error.requestId}
+                    onAdjustGoal={() => { setError(null); setStep(3); }}
+                  />
                 </div>
               )}
+
+              {!solve.isPending && !infeasible && (paymentGate || (gate && !solved)) && (
+                <div style={{ marginTop: 26 }}>
+                  <Paywall
+                    gate={(paymentGate ?? gate)!}
+                    prices={prices.data}
+                    busy={authorize.isPending || solve.isPending}
+                    onBuyRace={buyThenSolve}
+                    requestId={error?.requestId}
+                  />
+                </div>
+              )}
+
+              {!solve.isPending && solved && !infeasible && (
+                <SolvedSummary plan={solved} onContinue={() => setStep(5)} />
+              )}
+
+              {!solve.isPending && !solved && !infeasible && !paymentGate && !gate && (
+                <div style={{ marginTop: 26 }}>
+                  <button
+                    type="button"
+                    onClick={() => void runSolve()}
+                    className="btn-accent"
+                    style={{ height: 52, padding: "0 28px", background: "#E4622F", color: "#fff", border: 0, borderRadius: 7, fontSize: 15.5, fontWeight: 600, cursor: "pointer" }}
+                  >
+                    Solve this plan
+                  </button>
+                </div>
+              )}
+
+              <StepFooter
+                onBack={() => setStep(3)}
+                onNext={solved ? () => setStep(5) : undefined}
+                nextLabel="Fuelling"
+                nextDisabled={!solved}
+              />
             </div>
           )}
 
           {/* ---------------- Step 5: Fuelling ---------------- */}
-          {st.step === 5 && (
-            <div>
-              <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>STEP 5 OF 7</div>
-              <h1 style={{ margin: "14px 0 0", fontSize: 46, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>How will you fuel it?</h1>
-              <p style={{ margin: "14px 0 0", maxWidth: 540, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>Your gut ceiling is a hard stop, not a suggestion. Crossing it needs an explicit override.</p>
-
-              <div style={{ background: "#FBF8F2", borderRadius: 12, padding: "28px 30px", marginTop: 32, boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-                  <span className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>CARBOHYDRATE ON THE BIKE</span>
-                  <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                    <span className="mono" style={{ fontSize: 38, letterSpacing: "-.04em", color: st.carb > 90 ? "#C0392B" : "#15140F" }}>{st.carb}</span>
-                    <span className="mono" style={{ fontSize: 13, color: "#8C8578" }}>g / hr</span>
-                  </span>
-                </div>
-                <div style={{ position: "relative", margin: "22px 0 0" }}>
-                  <input type="range" min={40} max={110} step={1} value={st.carb} onChange={(e) => setSt((s) => ({ ...s, carb: +e.target.value }))} style={{ width: "100%", height: 18 }} />
-                  <span style={{ position: "absolute", left: ceilPos.toFixed(1) + "%", top: -4, width: 2, height: 22, background: "#C0392B", pointerEvents: "none" }} />
-                </div>
-                <div className="mono" style={{ position: "relative", height: 15, marginTop: 4, fontSize: 9.5, letterSpacing: ".11em", color: "#A8A192" }}>
-                  <span style={{ position: "absolute", left: 0 }}>40</span>
-                  <span style={{ position: "absolute", left: ceilPos.toFixed(1) + "%", transform: "translateX(-50%)", color: "#C0392B", whiteSpace: "nowrap" }}>CEILING 90</span>
-                  <span style={{ position: "absolute", right: 0 }}>110</span>
-                </div>
-                {st.carb > 90 ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 13, marginTop: 22, padding: "16px 18px", borderRadius: 9, background: "rgba(192,57,43,.08)", border: "1px solid rgba(192,57,43,.32)" }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#C0392B", flex: "none" }} />
-                    <span style={{ fontSize: 14.5, lineHeight: 1.45, color: "#3D3A31" }}>Above your measured ceiling of 90 g/hr. Nine of eleven athletes who did this reported gut distress after hour four.</span>
-                    <span className="mono" style={{ marginLeft: "auto", fontSize: 9, letterSpacing: ".12em", padding: "7px 12px", border: "1px solid rgba(192,57,43,.4)", borderRadius: 5, color: "#C0392B", cursor: "pointer", whiteSpace: "nowrap" }}>OVERRIDE</span>
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", alignItems: "center", gap: 13, marginTop: 22, padding: "16px 18px", borderRadius: 9, background: "rgba(21,20,15,.04)" }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#7CC08F", flex: "none" }} />
-                    <span style={{ fontSize: 14.5, lineHeight: 1.45, color: "#3D3A31" }}>
-                      {st.carb >= 85
-                        ? "Close to your ceiling of 90 g/hr. Workable, but intake usually drops on the climbs, so this leaves you little room."
-                        : "Comfortably inside your measured ceiling of 90 g/hr, with headroom for the climbs where intake usually drops."}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 14, marginTop: 14 }}>
-                <div style={cardStyle}>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>CARBOHYDRATE SOURCE</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 14 }}>
-                    {["Gels", "Drink mix", "Chews", "Real food"].map((s) => {
-                      const sel = st.source === s;
-                      return (
-                        <div key={s} onClick={() => setSt((prev) => ({ ...prev, source: s }))} className="row-hover-border" style={{ padding: "9px 14px", borderRadius: 6, cursor: "pointer", fontSize: 13.5, fontWeight: 500, background: sel ? "#15140F" : "#fff", border: `1px solid ${sel ? "#15140F" : "rgba(21,20,15,.14)"}`, color: sel ? "#FBF8F2" : "#5C574B" }}>{s}</div>
-                      );
-                    })}
-                  </div>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578", marginTop: 24 }}>CAFFEINE STRATEGY</div>
-                  <div style={{ display: "flex", gap: 7, marginTop: 14 }}>
-                    {[
-                      { k: "None", d: "No caffeine at all" },
-                      { k: "Run only", d: "Held back until km 12" },
-                      { k: "Bike and run", d: "Split across both legs" },
-                    ].map((c) => {
-                      const sel = st.caffeine === c.k;
-                      return (
-                        <div key={c.k} onClick={() => setSt((s) => ({ ...s, caffeine: c.k }))} className="row-hover-border" style={{ flex: 1, padding: "12px 14px", borderRadius: 7, cursor: "pointer", background: sel ? "#15140F" : "#fff", border: `1px solid ${sel ? "#15140F" : "rgba(21,20,15,.14)"}` }}>
-                          <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-.018em", color: sel ? "#FBF8F2" : "#15140F" }}>{c.k}</div>
-                          <div style={{ fontSize: 12, lineHeight: 1.4, color: sel ? "rgba(251,248,242,.5)" : "#8C8578", marginTop: 5 }}>{c.d}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div style={cardStyle}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>CUMULATIVE INTAKE</span>
-                    <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#A8A192" }}>AGAINST CEILING</span>
-                  </div>
-                  <svg viewBox="0 0 400 140" style={{ display: "block", width: "100%", marginTop: 16 }}>
-                    <path d={ceilPath} fill="none" stroke="rgba(192,57,43,.5)" strokeWidth={1.4} strokeDasharray="4 4" />
-                    <path d={intakeArea} fill="rgba(228,98,47,.14)" />
-                    <path d={intakePath} fill="none" stroke="#E4622F" strokeWidth={1.8} strokeLinejoin="round" />
-                    <line x1={0} y1={128} x2={400} y2={128} stroke="rgba(21,20,15,.14)" strokeWidth={1} />
-                  </svg>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(21,20,15,.08)" }}>
-                    <div><div className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#A8A192" }}>CARB TOTAL</div><div className="mono" style={{ fontSize: 18, marginTop: 6 }}>{carbTotal}<span style={{ fontSize: 11, color: "#8C8578" }}> g</span></div></div>
-                    <div><div className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#A8A192" }}>FLUID</div><div className="mono" style={{ fontSize: 18, marginTop: 6 }}>8.4<span style={{ fontSize: 11, color: "#8C8578" }}> L</span></div></div>
-                    <div><div className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#A8A192" }}>SODIUM</div><div className="mono" style={{ fontSize: 18, marginTop: 6 }}>10.9<span style={{ fontSize: 11, color: "#8C8578" }}> g</span></div></div>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ background: "#FBF8F2", borderRadius: 12, padding: "8px 30px 20px", marginTop: 14, boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 0 12px", borderBottom: "1px solid rgba(21,20,15,.1)" }}>
-                  <span className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>AID STATION TIMELINE · SPECIAL NEEDS DECIDED HERE</span>
-                  <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#A8A192" }}>6 STATIONS</span>
-                </div>
-                {aidRows.map((a) => (
-                  <div key={a.name} style={{ display: "grid", gridTemplateColumns: "104px 1.2fr 1.7fr 92px", gap: 18, padding: "14px 0", borderBottom: "1px solid rgba(21,20,15,.07)", alignItems: "center" }}>
-                    <span className="mono" style={{ fontSize: 12.5, color: "#5C574B" }}>{a.at}</span>
-                    <span style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 14.5, fontWeight: 500, letterSpacing: "-.018em", whiteSpace: "nowrap" }}>
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: a.dot, flex: "none" }} />{a.name}
-                    </span>
-                    <span style={{ fontSize: 13.5, color: "#3D3A31" }}>{a.action}</span>
-                    <span className="mono" style={{ textAlign: "right", fontSize: 12.5, color: "#5C574B" }}>{a.total}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {step === 5 && solved && (
+            <FuellingStep
+              plan={solved}
+              gutCeiling={byKey.get("gut_carb_ceiling")?.value ?? null}
+              carbOverride={carbOverride}
+              setCarbOverride={setCarbOverride}
+              busy={solve.isPending}
+              onApply={(value) => void runSolve({ carbOverride: value, force: true })}
+              onBack={() => setStep(4)}
+              onNext={() => setStep(6)}
+            />
           )}
 
           {/* ---------------- Step 6: Bags ---------------- */}
-          {st.step === 6 && (
-            <div>
-              <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>STEP 6 OF 7</div>
-              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 40 }}>
-                <h1 style={{ margin: "14px 0 0", fontSize: 46, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>Five bags, packed for you.</h1>
-                <a href="#" className="btn-outline-dark2" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 42, padding: "0 18px", border: "1px solid rgba(21,20,15,.18)", borderRadius: 6, fontSize: 14, fontWeight: 600, flex: "none" }}>Print all five</a>
-              </div>
-
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 26 }}>
-                {[
-                  { tag: "HEAT · 31°C", text: "Arm coolers and two extra salt capsules", bg: "rgba(228,98,47,.07)", border: "rgba(228,98,47,.3)", dot: "#E4622F", tagFg: "#C6461B" },
-                  { tag: "NIGHT FINISH", text: "Head torch in Run Special Needs", bg: "rgba(21,20,15,.05)", border: "rgba(21,20,15,.12)", dot: "#5C574B", tagFg: "#5C574B" },
-                  { tag: "COLD WATER · 23.1°C", text: "Non-wetsuit, so a second tinted pair of goggles", bg: "rgba(79,124,147,.09)", border: "rgba(79,124,147,.3)", dot: "#4F7C93", tagFg: "#3D6478" },
-                ].map((c) => (
-                  <div key={c.tag} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 15px", borderRadius: 8, background: c.bg, border: `1px solid ${c.border}` }}>
-                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: c.dot, flex: "none" }} />
-                    <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: c.tagFg }}>{c.tag}</span>
-                    <span style={{ fontSize: 13.5, color: "#3D3A31" }}>{c.text}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "280px minmax(0,1fr)", borderRadius: 12, overflow: "hidden", background: "#EAE3D6", marginTop: 20 }}>
-                <div style={{ padding: 13, display: "flex", flexDirection: "column", gap: 2 }}>
-                  {bags.map((b, k) => {
-                    const sel = k === st.bag;
-                    return (
-                      <div key={b.name} onClick={() => setSt((s) => ({ ...s, bag: k }))} className={sel ? "" : "row-hover"} style={{ display: "flex", alignItems: "center", gap: 13, padding: "17px 16px", borderRadius: 8, cursor: "pointer", background: sel ? "#15140F" : "transparent", color: sel ? "#FBF8F2" : "#15140F" }}>
-                        <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".13em", color: sel ? "rgba(255,255,255,.45)" : "#8C8578" }}>{"0" + (k + 1)}</span>
-                        <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-.026em", whiteSpace: "nowrap" }}>{b.name}</span>
-                        <span className="mono" style={{ marginLeft: "auto", fontSize: 9, color: sel ? "rgba(255,255,255,.45)" : "#8C8578" }}>{b.items.length} items</span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div style={{ background: "#FBF8F2", padding: "28px 32px 30px" }}>
-                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", paddingBottom: 18, borderBottom: "1px solid rgba(21,20,15,.09)" }}>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 13 }}>
-                      <span style={{ fontSize: 27, fontWeight: 600, letterSpacing: "-.034em" }}>{B.name}</span>
-                      <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "#8C8578" }}>{B.when}</span>
-                    </div>
-                    <span className="mono link-accent" style={{ fontSize: 9, letterSpacing: ".12em", color: "#C6461B", cursor: "pointer" }}>+ ADD ITEM</span>
-                  </div>
-                  {B.items.map((it, k) => (
-                    <div key={it.name} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 96px 26px", gap: 16, padding: "14px 0", borderBottom: "1px solid rgba(21,20,15,.07)", alignItems: "center" }}>
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ display: "block", fontSize: 15.5 }}>{it.name}</span>
-                        {it.note && <span style={{ display: "block", fontSize: 12.5, lineHeight: 1.45, color: "#8C8578", marginTop: 4 }}>{it.note}</span>}
-                      </span>
-                      <span style={{ display: "flex", alignItems: "center", border: "1px solid rgba(21,20,15,.14)", borderRadius: 6, overflow: "hidden" }}>
-                        <span onClick={bump(st.bag, k, it.qty, -1)} className="qty-btn mono" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 30, cursor: "pointer", fontSize: 13, color: "#8C8578" }}>–</span>
-                        <span className="mono" style={{ flex: 1, textAlign: "center", fontSize: 12.5 }}>{qtyOf(st.bag, k, it.qty)}×</span>
-                        <span onClick={bump(st.bag, k, it.qty, 1)} className="qty-btn mono" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 30, cursor: "pointer", fontSize: 13, color: "#8C8578" }}>+</span>
-                      </span>
-                      <span className="remove-btn" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 5, cursor: "pointer" }}>
-                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M1.5 1.5 10.5 10.5M10.5 1.5 1.5 10.5" stroke="#A8A192" strokeWidth={1.4} strokeLinecap="round" /></svg>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+          {step === 6 && solved && (
+            <BagsStep plan={solved} onBack={() => setStep(5)} onNext={() => setStep(7)} />
           )}
 
           {/* ---------------- Step 7: Race card ---------------- */}
-          {st.step === 7 && (
+          {step === 7 && solved && (
             <div>
               <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>STEP 7 OF 7</div>
-              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 40 }}>
-                <h1 style={{ margin: "14px 0 0", fontSize: 46, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>Your race card.</h1>
-                <span className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "#A8A192", paddingBottom: 8, whiteSpace: "nowrap" }}>EXACTLY AS IT PRINTS · A5 · MONOCHROME LEGIBLE</span>
-              </div>
-
-              <div style={{ background: "#EAE3D6", borderRadius: 12, padding: 26, marginTop: 26 }}>
-                <div style={{ background: "#fff", borderRadius: 6, padding: "32px 34px", boxShadow: "0 20px 50px -30px rgba(21,20,15,.4)" }}>
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", paddingBottom: 16, borderBottom: "2px solid #15140F" }}>
-                    <div>
-                      <div style={{ fontSize: 23, fontWeight: 700, letterSpacing: "-.03em" }}>TRAMUNTANA FULL</div>
-                      <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", color: "#5C574B", marginTop: 5 }}>21 JUNE 2026 · 06:40 START · PORT DE POLLENÇA</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div className="mono" style={{ fontSize: 23, letterSpacing: "-.03em" }}>{fmtClock(G)}:00</div>
-                      <div className="mono" style={{ fontSize: 9, letterSpacing: ".12em", color: "#5C574B", marginTop: 5 }}>GOAL · PLAN v1</div>
-                    </div>
-                  </div>
-                  {cardSections.map((s) => (
-                    <div key={s.title} style={{ padding: "18px 0", borderBottom: "1px solid rgba(21,20,15,.18)" }}>
-                      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-                        <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".16em", fontWeight: 500 }}>{s.title}</span>
-                        <span onClick={() => setSt((prev) => ({ ...prev, step: s.step }))} className="mono link-accent" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#C6461B", cursor: "pointer" }}>EDIT STEP {s.step} →</span>
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: `repeat(${s.cols},1fr)`, gap: 14, marginTop: 14 }}>
-                        {s.rows.map((r) => (
-                          <div key={r.k}>
-                            <div className="mono" style={{ fontSize: 8, letterSpacing: ".12em", color: "#6B6455" }}>{r.k}</div>
-                            <div className="mono" style={{ fontSize: 15, marginTop: 5 }}>{r.v}</div>
-                          </div>
-                        ))}
-                      </div>
+              <h1 style={{ margin: "14px 0 0", fontSize: 46, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>Your race card.</h1>
+              <p style={{ margin: "14px 0 0", maxWidth: 560, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>
+                Solved against {solved.course_name} on bundle {solved.bundle_version}. Every number
+                traces to the constraint that produced it.
+              </p>
+              <div style={{ ...cardStyle, marginTop: 30 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 22 }}>
+                  {solved.splits.map((s) => (
+                    <div key={s.leg}>
+                      <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#A8A192" }}>{s.leg} {formatKm((s.distance ?? 0) * 1000)} KM</div>
+                      <div className="mono" style={{ fontSize: 20, marginTop: 8 }}>{s.split_label}</div>
+                      <div className="mono" style={{ fontSize: 12, color: "#8C8578", marginTop: 5 }}>{s.target_pace_or_power} {s.unit}</div>
                     </div>
                   ))}
-                  <div className="mono" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 14, fontSize: 8, letterSpacing: ".12em", color: "#6B6455" }}>
-                    <span>RACEOS · BUNDLE v2026.2</span>
-                    <span>SWEAT RATE ESTIMATED · ALL OTHER VALUES MEASURED OR OFFICIAL</span>
-                  </div>
                 </div>
               </div>
-
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 32, marginTop: 16, padding: "24px 28px", background: "#FBF8F2", borderRadius: 12, boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                <div>
-                  <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-.026em" }}>One race, one payment, yours permanently.</div>
-                  <div style={{ fontSize: 14, lineHeight: 1.5, color: "#5C574B", marginTop: 7 }}>Includes every export, the drift re-solves through race week, and offline Race Mode on the day.</div>
-                </div>
-                <Link href={routes.checkout} className="btn-dark-to-accent" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 50, padding: "0 26px", background: "#E4622F", color: "#fff", borderRadius: 6, fontSize: 15.5, fontWeight: 600, flex: "none" }}>
-                  Purchase this plan — $19
+              <div style={{ display: "flex", gap: 12, marginTop: 26 }}>
+                <Link href={`${routes.racePlan}?plan=${solved.id}`} className="btn-accent" style={{ display: "inline-flex", alignItems: "center", height: 52, padding: "0 28px", background: "#E4622F", color: "#fff", borderRadius: 7, fontSize: 15.5, fontWeight: 600 }}>
+                  Open the full plan
                 </Link>
+                <button type="button" onClick={() => setStep(6)} className="btn-outline-dark2" style={{ height: 52, padding: "0 24px", border: "1px solid rgba(21,20,15,.18)", background: "transparent", borderRadius: 7, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
+                  Back
+                </button>
               </div>
             </div>
           )}
+        </div>
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, marginTop: 32 }}>
-            <div onClick={goBack} className="btn-outline-dark2" style={{ display: "inline-flex", alignItems: "center", gap: 9, whiteSpace: "nowrap", height: 46, padding: "0 20px", border: "1px solid rgba(21,20,15,.18)", borderRadius: 6, fontSize: 14.5, fontWeight: 600, cursor: "pointer", visibility: st.step === 1 ? "hidden" : "visible" }}>
-              <span className="mono" style={{ fontSize: 13 }}>←</span>{STEP_NAMES[Math.max(0, st.step - 2)]}
-            </div>
-            {st.step < 7 && !st.solving && (
-              <div onClick={goNext} className="btn-dark-to-accent" style={{ display: "inline-flex", alignItems: "center", gap: 10, whiteSpace: "nowrap", height: 46, padding: "0 24px", background: "#E4622F", color: "#fff", borderRadius: 6, fontSize: 14.5, fontWeight: 600, cursor: "pointer" }}>
-                {st.step === 3 ? "Solve my plan" : st.step === 4 ? "Looks right, continue" : "Continue to " + STEP_NAMES[st.step]}
-                <span className="mono" style={{ fontSize: 13 }}>→</span>
+        {/* ---------------- The running panel ---------------- */}
+        <aside style={{ position: "sticky", top: 90, ...cardStyle }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={labelStyle}>THIS PLAN</span>
+            <span className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: solved ? "#3E7B55" : "#8C8578" }}>
+              {solved ? solved.feasibility : "NOT SOLVED"}
+            </span>
+          </div>
+
+          <div className="mono" style={{ fontSize: 34, letterSpacing: "-.04em", marginTop: 16 }}>
+            {solved?.projected_label ?? (plan.isFetching ? <Skeleton width="5ch" height={34} /> : "—")}
+          </div>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#A8A192", marginTop: 6 }}>PROJECTED FINISH</div>
+
+          <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid rgba(21,20,15,.08)" }}>
+            {/* Three legs. T1 and T2 are not serialised — the total transition
+                time is recoverable, the split is not, so it is not invented. */}
+            {panelSplits.length === 0 && (
+              <div style={{ fontSize: 13.5, lineHeight: 1.5, color: "#8C8578" }}>
+                The panel fills in when the plan solves. Nothing here is a projection.
               </div>
             )}
+            {panelSplits.map((s) => (
+              <div key={s.leg} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid rgba(21,20,15,.06)" }}>
+                <span style={{ fontSize: 14, color: "#3D3A31" }}>{s.leg.charAt(0) + s.leg.slice(1).toLowerCase()}</span>
+                <span style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+                  <span className="mono" style={{ fontSize: 10.5, color: "#A39B8A" }}>{s.target_pace_or_power}{s.unit}</span>
+                  <span className="mono" style={{ fontSize: 14, minWidth: 48, textAlign: "right" }}>{s.split_label}</span>
+                </span>
+              </div>
+            ))}
           </div>
-        </div>
 
-        {/* ---------------- Live panel ---------------- */}
-        <div style={{ position: "sticky", top: 110 }}>
-          <div style={{ background: "#15140F", borderRadius: 12, padding: "24px 26px", boxShadow: "0 20px 50px -30px rgba(21,20,15,.5)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "rgba(251,248,242,.4)" }}>LIVE PANEL</span>
-              <span className="mono" style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 8.5, letterSpacing: ".13em", color: pColor }}>
-                <span style={{ width: 5, height: 5, borderRadius: "50%", background: pColor, animation: "breathe 2.6s ease-in-out infinite" }} />{pLabel}
-              </span>
-            </div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 18 }}>
-              <span className="mono" style={{ fontSize: 40, letterSpacing: "-.045em", color: "#FBF8F2" }}>{fmtClock(G)}:00</span>
-              <span className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "rgba(251,248,242,.35)" }}>GOAL</span>
-            </div>
-            <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid rgba(251,248,242,.1)" }}>
-              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "rgba(251,248,242,.35)" }}>PROJECTED SPLITS</div>
-              {panelSplits.map((s) => (
-                <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 0" }}>
-                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: s.color, flex: "none" }} />
-                  <span style={{ fontSize: 13.5, color: "rgba(251,248,242,.72)" }}>{s.name}</span>
-                  <span className="mono" style={{ marginLeft: "auto", fontSize: 9.5, color: "rgba(251,248,242,.35)" }}>{s.target}</span>
-                  <span className="mono" style={{ fontSize: 14, color: "#FBF8F2", minWidth: 48, textAlign: "right" }}>{s.time}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid rgba(251,248,242,.1)" }}>
-              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "rgba(251,248,242,.35)" }}>TIGHTEST BARRIER</div>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 11 }}>
-                <span style={{ fontSize: 14, color: "rgba(251,248,242,.72)" }}>{tight.name.toLowerCase().replace("km", "km ")}</span>
-                <span className="mono" style={{ fontSize: 17, color: pColor }}>{(worst >= 0 ? "+" : "") + fmtClock(worst)}</span>
-              </div>
-            </div>
-            <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid rgba(251,248,242,.1)" }}>
-              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "rgba(251,248,242,.35)" }}>BINDING NOW</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-                {binding.map((b) => (
-                  <div key={b.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ width: 4, height: 4, borderRadius: "50%", background: "#E4622F", flex: "none" }} />
-                    <span style={{ fontSize: 13, color: "rgba(251,248,242,.68)" }}>{b.name}</span>
-                    <span className="mono" style={{ marginLeft: "auto", fontSize: 11, color: "rgba(251,248,242,.42)" }}>{b.value}</span>
+          {panelGates.length > 0 && (
+            <div style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid rgba(21,20,15,.08)" }}>
+              <div style={labelStyle}>CUT-OFF MARGINS</div>
+              {panelGates.map((g) => {
+                const color = g.state === "bad" ? "#C0392B" : g.state === "tight" ? "#A0701A" : "#3E7B55";
+                return (
+                  <div key={g.name} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid rgba(21,20,15,.06)" }}>
+                    <span style={{ fontSize: 13.5, color: "#3D3A31" }}>{g.name.replace(/_/g, " ")}</span>
+                    <span className="mono" style={{ fontSize: 13, color }}>{g.margin_label ?? formatMargin(g.margin_minutes)}</span>
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
-          </div>
-          <div style={{ marginTop: 12, padding: "16px 20px", borderRadius: 10, background: "rgba(21,20,15,.045)", fontSize: 12.5, lineHeight: 1.5, color: "#6B6455" }}>{panelNote}</div>
-        </div>
+          )}
+
+          {solved && (
+            <p style={{ margin: "18px 0 0", fontSize: 12.5, lineHeight: 1.5, color: "#8C8578" }}>
+              Every number here came out of the solver and can be traced to the constraint that
+              produced it.
+            </p>
+          )}
+          <OsmAttribution attribution={solved?.attribution} style={{ marginTop: 14 }} />
+        </aside>
       </div>
     </div>
+  );
+}
+
+// --- small pieces ------------------------------------------------------------
+
+function StepFooter({
+  onBack, onNext, nextLabel, nextDisabled,
+}: {
+  onBack?: () => void;
+  onNext?: () => void;
+  nextLabel?: string;
+  nextDisabled?: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 30 }}>
+      {onBack && (
+        <button type="button" onClick={onBack} className="btn-outline-dark2" style={{ height: 50, padding: "0 22px", border: "1px solid rgba(21,20,15,.18)", background: "transparent", borderRadius: 7, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
+          Back
+        </button>
+      )}
+      {onNext && (
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={nextDisabled}
+          className="btn-accent"
+          style={{ height: 50, padding: "0 26px", background: nextDisabled ? "rgba(21,20,15,.1)" : "#E4622F", color: nextDisabled ? "#A8A192" : "#fff", border: 0, borderRadius: 7, fontSize: 15, fontWeight: 600, cursor: nextDisabled ? "not-allowed" : "pointer" }}
+        >
+          {nextLabel ?? "Continue"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ManualEntry({
+  unit, value, onChange, onSave, onCancel, busy,
+}: {
+  unit: string; value: string; onChange: (v: string) => void;
+  onSave: () => void; onCancel: () => void; busy: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 0 20px", borderBottom: "1px solid rgba(21,20,15,.07)" }}>
+      <div style={{ ...inputBoxStyle, width: 200 }}>
+        <input
+          autoFocus
+          type="number"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") onSave(); if (e.key === "Escape") onCancel(); }}
+          style={{ flex: 1, border: 0, background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: 16, color: "#15140F", padding: 0, outline: "none" }}
+        />
+        <span className="mono" style={{ fontSize: 11, color: "#8C8578" }}>{unit}</span>
+      </div>
+      <button type="button" onClick={onSave} disabled={busy} style={{ height: 46, padding: "0 18px", background: "#15140F", color: "#F1EEE8", border: 0, borderRadius: 7, fontSize: 14, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>
+        {busy ? "Saving…" : "Save"}
+      </button>
+      <button type="button" onClick={onCancel} style={{ height: 46, padding: "0 14px", background: "transparent", border: 0, color: "#8C8578", fontSize: 14, cursor: "pointer" }}>Cancel</button>
+      <span style={{ fontSize: 12.5, color: "#8C8578" }}>Saved as MANUAL — a number you already trust.</span>
+    </div>
+  );
+}
+
+function Estimator({
+  fields, answers, onChange, onSubmit, onCancel, busy,
+}: {
+  fields: { name: string; label: string; suffix?: string; type: "number" | "boolean"; placeholder?: string }[];
+  answers: Record<string, string | boolean>;
+  onChange: (a: Record<string, string | boolean>) => void;
+  onSubmit: () => void; onCancel: () => void; busy: boolean;
+}) {
+  const ready = fields.every((f) => f.type === "boolean" || String(answers[f.name] ?? "").trim() !== "");
+  return (
+    <div style={{ padding: "18px 20px 20px", margin: "6px 0 14px", borderRadius: 9, background: "rgba(228,98,47,.05)", border: "1px solid rgba(228,98,47,.24)" }}>
+      <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#C6461B" }}>ESTIMATE IT</div>
+      <p style={{ margin: "8px 0 16px", maxWidth: 560, fontSize: 13.5, lineHeight: 1.5, color: "#6B6455" }}>
+        An estimated value carries full weight in the solver — the estimator&rsquo;s job is to find your
+        real number, not a cautious one.
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+        {fields.map((f) =>
+          f.type === "boolean" ? (
+            <label key={f.name} style={{ display: "flex", alignItems: "center", gap: 10, height: 46, padding: "0 14px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff", cursor: "pointer", fontSize: 14 }}>
+              <input type="checkbox" checked={Boolean(answers[f.name])} onChange={(e) => onChange({ ...answers, [f.name]: e.target.checked })} />
+              {f.label}
+            </label>
+          ) : (
+            <div key={f.name}>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#8C8578", marginBottom: 7 }}>{f.label.toUpperCase()}</div>
+              <div style={{ ...inputBoxStyle, width: 190 }}>
+                <input
+                  type="number"
+                  value={String(answers[f.name] ?? "")}
+                  placeholder={f.placeholder}
+                  onChange={(e) => onChange({ ...answers, [f.name]: e.target.value })}
+                  style={{ flex: 1, border: 0, background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: 15, color: "#15140F", padding: 0, outline: "none", minWidth: 0 }}
+                />
+                {f.suffix && <span className="mono" style={{ fontSize: 10.5, color: "#8C8578" }}>{f.suffix}</span>}
+              </div>
+            </div>
+          ),
+        )}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 18 }}>
+        <button type="button" onClick={onSubmit} disabled={!ready || busy} style={{ height: 44, padding: "0 18px", background: ready && !busy ? "#E4622F" : "rgba(21,20,15,.1)", color: ready && !busy ? "#fff" : "#A8A192", border: 0, borderRadius: 7, fontSize: 14, fontWeight: 600, cursor: ready && !busy ? "pointer" : "not-allowed" }}>
+          {busy ? "Estimating…" : "Use this estimate"}
+        </button>
+        <button type="button" onClick={onCancel} style={{ height: 44, padding: "0 14px", background: "transparent", border: 0, color: "#8C8578", fontSize: 14, cursor: "pointer" }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function SolvedSummary({ plan, onContinue }: { plan: SolvedPlan; onContinue: () => void }) {
+  const tone = plan.feasibility === "CLEAR" ? "clear" : plan.feasibility === "TIGHT" ? "tight" : "clear";
+  const col = tone === "clear" ? "#3E7B55" : "#A0701A";
+  const worst = plan.gates.length
+    ? plan.gates.reduce((a, b) => (a.margin_minutes < b.margin_minutes ? a : b))
+    : null;
+
+  return (
+    <div style={{ marginTop: 26 }}>
+      <div style={{ borderRadius: 12, padding: "30px 32px", background: tone === "clear" ? "rgba(124,192,143,.1)" : "rgba(224,163,60,.11)", border: `1px solid ${tone === "clear" ? "rgba(124,192,143,.4)" : "rgba(224,163,60,.4)"}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: col }} />
+          <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: col }}>{plan.feasibility}</span>
+        </div>
+        <p style={{ margin: "15px 0 0", maxWidth: 640, fontSize: 30, lineHeight: 1.16, fontWeight: 500, letterSpacing: "-.035em" }}>
+          {worst
+            ? `You clear the ${worst.name.replace(/_/g, " ")} with ${formatClock(worst.margin_minutes)} in hand.`
+            : `Projected finish ${plan.projected_label}.`}
+        </p>
+        <p style={{ margin: "12px 0 0", maxWidth: 620, fontSize: 15, lineHeight: 1.55, color: "#5C574B" }}>
+          Solved against {plan.course_name} on bundle {plan.bundle_version}.
+          {plan.binding_constraint_key ? ` The binding constraint is ${plan.binding_constraint_key.replace(/_/g, " ")}.` : ""}
+          {plan.readiness_note ? ` ${plan.readiness_note}` : ""}
+        </p>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(plan.gates.length, 1)},1fr)`, gap: 14, marginTop: 14 }}>
+        {plan.gates.map((g) => {
+          const color = g.state === "bad" ? "#C0392B" : g.state === "tight" ? "#A0701A" : "#3E7B55";
+          const bg = g.state === "bad" ? "rgba(192,57,43,.07)" : g.state === "tight" ? "rgba(224,163,60,.1)" : "rgba(124,192,143,.1)";
+          return (
+            <div key={g.name} style={{ borderRadius: 10, padding: "18px 20px", background: bg, border: `1px solid ${color}44` }}>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#8C8578" }}>{g.name.replace(/_/g, " ").toUpperCase()}</div>
+              <div className="mono" style={{ fontSize: 20, marginTop: 9, color }}>{g.margin_label ?? formatMargin(g.margin_minutes)}</div>
+              <div className="mono" style={{ fontSize: 10, color: "#8C8578", marginTop: 6 }}>ETA {formatClock(g.eta_minutes)} · LIMIT {formatClock(g.limit_minutes)}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <button type="button" onClick={onContinue} className="btn-accent" style={{ height: 52, padding: "0 28px", marginTop: 22, background: "#E4622F", color: "#fff", border: 0, borderRadius: 7, fontSize: 15.5, fontWeight: 600, cursor: "pointer" }}>
+        See the fuelling
+      </button>
+    </div>
+  );
+}
+
+function FuellingStep({
+  plan, gutCeiling, carbOverride, setCarbOverride, busy, onApply, onBack, onNext,
+}: {
+  plan: SolvedPlan;
+  gutCeiling: number | null;
+  carbOverride: number | null;
+  setCarbOverride: (v: number | null) => void;
+  busy: boolean;
+  onApply: (v: number) => void;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  const f = plan.fuelling;
+  const requested = carbOverride ?? f.carb_g_per_hr;
+  // The warning is derived from the athlete's own measured ceiling — the
+  // backend defines an OVER_CEILING code but never raises it, so the check
+  // that makes an override deliberate rather than silent lives here.
+  const overCeiling = gutCeiling != null && requested > gutCeiling;
+
+  return (
+    <div>
+      <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>STEP 5 OF 7</div>
+      <h1 style={{ margin: "14px 0 0", fontSize: 46, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>What goes in.</h1>
+      <p style={{ margin: "14px 0 0", maxWidth: 560, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>
+        {f.total_carb_g} g of carbohydrate across the day, and the aid stations where each of it goes in.
+      </p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginTop: 30 }}>
+        {[
+          { label: "CARB / HR", value: `${f.carb_g_per_hr} g`, key: f.binding_carb_key },
+          { label: "FLUID / HR", value: `${f.fluid_ml_per_hr} ml`, key: f.binding_fluid_key },
+          { label: "SODIUM / HR", value: `${f.sodium_mg_per_hr} mg`, key: f.binding_sodium_key },
+          { label: "CAFFEINE, TOTAL", value: `${f.caffeine_mg_total} mg`, key: f.binding_caffeine_key },
+        ].map((c) => (
+          <div key={c.label} style={cardStyle}>
+            <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>{c.label}</div>
+            <div className="mono" style={{ fontSize: 26, marginTop: 10 }}>{c.value}</div>
+            {/* Every value names the constraint that produced it. */}
+            <div className="mono" style={{ fontSize: 9, color: "#8C8578", marginTop: 8 }}>{(c.key ?? "").replace(/_/g, " ")}</div>
+          </div>
+        ))}
+      </div>
+
+      {f.overridden && (
+        <div style={{ marginTop: 14, padding: "14px 18px", borderRadius: 9, background: "rgba(224,163,60,.1)", border: "1px solid rgba(224,163,60,.34)", fontSize: 14, color: "#3D3A31" }}>
+          This fuelling carries an override. It is recorded against the plan and shown wherever the
+          number appears.
+        </div>
+      )}
+      {f.requires_multiple_transportable && (
+        <div style={{ marginTop: 14, padding: "14px 18px", borderRadius: 9, background: "rgba(79,124,147,.07)", border: "1px solid rgba(79,124,147,.26)", fontSize: 14, color: "#3D3A31" }}>
+          This rate needs more than one transportable carbohydrate — a single-source product will not
+          absorb fast enough.
+        </div>
+      )}
+
+      {/* The real fuel bars: cumulative carb from the aid actions themselves. */}
+      <div style={{ ...cardStyle, marginTop: 16 }}>
+        <div style={labelStyle}>CARBOHYDRATE IN, ACROSS THE DAY</div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 120, marginTop: 18 }}>
+          {plan.aid_actions.map((a) => {
+            const maxCum = plan.aid_actions[plan.aid_actions.length - 1]?.cumulative_carb_g || 1;
+            return (
+              <div
+                key={a.ordinal}
+                title={`${a.station_name} · ${Math.round(a.cumulative_carb_g)} g by km ${a.at_km}`}
+                style={{ flex: 1, height: `${(a.cumulative_carb_g / maxCum) * 100}%`, background: a.leg === "RUN" ? "#64707A" : "#E4622F", opacity: 0.85, borderRadius: "2px 2px 0 0", minWidth: 3 }}
+              />
+            );
+          })}
+        </div>
+        <div className="mono" style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, color: "#A8A192", marginTop: 8 }}>
+          <span>0 g</span>
+          <span>{Math.round(plan.aid_actions[plan.aid_actions.length - 1]?.cumulative_carb_g ?? 0)} g</span>
+        </div>
+      </div>
+
+      <div style={{ ...cardStyle, marginTop: 16 }}>
+        <div style={labelStyle}>OVERRIDE THE CARB RATE</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 16 }}>
+          <input
+            type="range"
+            min={40}
+            max={120}
+            step={1}
+            value={requested}
+            onChange={(e) => setCarbOverride(+e.target.value)}
+            aria-label="Carbohydrate grams per hour"
+            style={{ flex: 1, height: 18 }}
+          />
+          <span className="mono" style={{ fontSize: 24, minWidth: "5ch", textAlign: "right" }}>{requested} g</span>
+        </div>
+        {overCeiling && (
+          <div style={{ marginTop: 14, padding: "14px 18px", borderRadius: 9, background: "rgba(224,163,60,.1)", border: "1px solid rgba(224,163,60,.34)", fontSize: 14, lineHeight: 1.5, color: "#3D3A31" }}>
+            {requested} g/hr is above your gut ceiling of {gutCeiling}. Available, but not silently —
+            the override is recorded against the plan.
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 12, marginTop: 18 }}>
+          <button
+            type="button"
+            onClick={() => onApply(requested)}
+            disabled={busy || requested === f.carb_g_per_hr}
+            style={{ height: 46, padding: "0 20px", background: busy || requested === f.carb_g_per_hr ? "rgba(21,20,15,.1)" : "#15140F", color: busy || requested === f.carb_g_per_hr ? "#A8A192" : "#F1EEE8", border: 0, borderRadius: 7, fontSize: 14.5, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}
+          >
+            {busy ? "Re-solving…" : overCeiling ? "Override anyway" : "Re-solve at this rate"}
+          </button>
+          {carbOverride != null && (
+            <button type="button" onClick={() => setCarbOverride(null)} style={{ height: 46, padding: "0 14px", background: "transparent", border: 0, color: "#8C8578", fontSize: 14, cursor: "pointer" }}>Reset</button>
+          )}
+        </div>
+      </div>
+
+      <div style={{ ...cardStyle, marginTop: 16, padding: 0 }}>
+        <div style={{ padding: "22px 26px 8px", ...labelStyle }}>THE AID-STATION TIMELINE</div>
+        <div style={{ padding: "0 26px 22px" }}>
+          {plan.aid_actions.map((a) => (
+            <div key={a.ordinal} style={{ display: "grid", gridTemplateColumns: "120px minmax(0,1fr) 90px", gap: 18, alignItems: "baseline", padding: "13px 0", borderBottom: "1px solid rgba(21,20,15,.06)" }}>
+              <span className="mono" style={{ fontSize: 12.5, color: "#8C8578" }}>
+                {wallClockFrom(plan.start_time_local, a.at_clock_minutes)} · km {a.at_km}
+              </span>
+              <span>
+                <span style={{ fontSize: 15, fontWeight: 500, letterSpacing: "-.018em" }}>{a.station_name}</span>
+                <span style={{ display: "block", fontSize: 13.5, color: "#6B6455", marginTop: 3 }}>{a.action_text}</span>
+              </span>
+              <span className="mono" style={{ fontSize: 13, textAlign: "right" }}>{Math.round(a.cumulative_carb_g)} g</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <StepFooter onBack={onBack} onNext={onNext} nextLabel="Pack the bags" />
+    </div>
+  );
+}
+
+function BagsStep({ plan, onBack, onNext }: { plan: SolvedPlan; onBack: () => void; onNext: () => void }) {
+  const [active, setActive] = useState(0);
+  const bag = plan.bags[active];
+
+  return (
+    <div>
+      <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>STEP 6 OF 7</div>
+      <h1 style={{ margin: "14px 0 0", fontSize: 46, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>
+        {plan.bags.length} bags, packed.
+      </h1>
+      <p style={{ margin: "14px 0 0", maxWidth: 560, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>
+        Every item carries the reason it is there. Nothing is in a bag because it usually is.
+      </p>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 30, flexWrap: "wrap" }}>
+        {plan.bags.map((b, i) => {
+          const on = i === active;
+          return (
+            <div key={b.key} onClick={() => setActive(i)} style={{ padding: "12px 16px", borderRadius: 8, cursor: "pointer", background: on ? "#15140F" : "#FBF8F2", border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.12)"}` }}>
+              <div style={{ fontSize: 14.5, fontWeight: 600, letterSpacing: "-.018em", color: on ? "#FBF8F2" : "#15140F" }}>{b.name}</div>
+              <div className="mono" style={{ fontSize: 9, letterSpacing: ".12em", color: on ? "rgba(251,248,242,.5)" : "#8C8578", marginTop: 5 }}>{b.item_count} ITEMS</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {bag && (
+        <div style={{ ...cardStyle, marginTop: 16 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-.03em" }}>{bag.name}</span>
+            <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "#8C8578" }}>{bag.when_label.toUpperCase()}</span>
+          </div>
+          <div style={{ marginTop: 18 }}>
+            {(bag.items ?? []).map((item) => (
+              <div key={item.ordinal} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 60px", gap: 18, padding: "14px 0", borderBottom: "1px solid rgba(21,20,15,.06)" }}>
+                <div>
+                  <div style={{ fontSize: 15.5, fontWeight: 500, letterSpacing: "-.018em" }}>
+                    {item.name}
+                    {item.is_user_added && <span className="mono" style={{ marginLeft: 10, fontSize: 8.5, letterSpacing: ".12em", padding: "2px 6px", borderRadius: 3, background: "rgba(21,20,15,.07)", color: "#5C574B" }}>ADDED BY YOU</span>}
+                  </div>
+                  {/* The reason, and the constraint it came from. */}
+                  {item.reason_text && <div style={{ fontSize: 13.5, lineHeight: 1.5, color: "#6B6455", marginTop: 4 }}>{item.reason_text}</div>}
+                  {item.reason_constraint_key && (
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: ".1em", color: "#A8A192", marginTop: 5 }}>{item.reason_constraint_key.replace(/_/g, " ")}</div>
+                  )}
+                </div>
+                <div className="mono" style={{ fontSize: 15, textAlign: "right" }}>{item.qty ?? ""}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <StepFooter onBack={onBack} onNext={onNext} nextLabel="See the race card" />
+    </div>
+  );
+}
+
+function BuilderSkeleton() {
+  return (
+    <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320, padding: "110px 48px" }}>
+      <div style={{ maxWidth: 1440, margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0,1fr) 356px", gap: 40 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <Skeleton width={110} height={10} /><Skeleton width={420} height={46} /><Skeleton width={520} height={16} />
+          <Skeleton width="100%" height={320} radius={12} style={{ marginTop: 18 }} />
+        </div>
+        <Skeleton width="100%" height={380} radius={12} />
+      </div>
+    </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function PlanBuilderPage() {
+  return (
+    <GuardedPage>
+      <Suspense fallback={<BuilderSkeleton />}>
+        <BuilderScreen />
+      </Suspense>
+    </GuardedPage>
   );
 }

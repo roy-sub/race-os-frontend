@@ -1,147 +1,172 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { Footer } from "@/components/Footer";
 import { Reveal } from "@/components/Reveal";
 import { MediaPlaceholder } from "@/components/MediaPlaceholder";
+import { ApiErrorState } from "@/components/ApiErrorState";
+import { Skeleton } from "@/components/Skeleton";
+import { OsmAttribution } from "@/components/OsmAttribution";
 import { routes } from "@/lib/routes";
+import { useCourses, useRecon, type CutoffCheck, type Recon, type Leg } from "@/lib/api/courses";
+import { usePrices, priceFor, formatPrice } from "@/lib/api/billing";
+import { client, unwrap } from "@/lib/api/client";
+import { useQuery } from "@tanstack/react-query";
 import {
-  FINISH_HIST,
-  aidRows,
-  buildElevation,
-  buildRoute,
-  buildRunSmall,
-  fmtClock,
-  toPath,
-} from "@/lib/courseRecon";
+  LEG_COLOR, elevationPath, formatBarrierName, formatClock, formatContents,
+  formatKm, formatMargin, formatMetres, projectLegs, sortLegs, widestGapKm,
+} from "@/lib/courseGeo";
 
 const SUBNAV = [
   { href: "#overview", label: "OVERVIEW" },
   { href: "#elevation", label: "ELEVATION" },
   { href: "#aid", label: "AID STATIONS" },
   { href: "#cutoffs", label: "CUT-OFFS" },
-  { href: "#conditions", label: "CONDITIONS" },
 ];
 
-export default function CourseReconPage() {
-  const el = useMemo(() => buildElevation(), []);
-  const rt = useMemo(() => buildRoute(), []);
-  const runSmall = useMemo(() => buildRunSmall(), []);
-  const bikeSmall = useMemo(() => el.filter((_, k) => k % 3 === 0), [el]);
-  const aid = useMemo(() => aidRows(), []);
+const MAP_W = 800;
+const MAP_H = 460;
+/**
+ * The route occupies the upper band and the elevation profile the lower one.
+ * They share a canvas but not a region — overlapping them makes both unreadable.
+ */
+const ROUTE_H = 326;
+const ELEV_TOP = 348;
 
-  const [goal, setGoal] = useState(705);
-  const [hoverOn, setHoverOn] = useState(false);
-  const [hi, setHi] = useState(0);
-
-  const swim = goal * 0.093;
-  const t1 = 8;
-  const t2 = 5;
-  const rest = goal - swim - t1 - t2;
-  const bike = rest * 0.582;
-  const run = rest * 0.418;
-
-  const rows = [
-    { name: "SWIM EXIT", limit: 140, eta: swim },
-    { name: "BIKE KM 120", limit: 510, eta: swim + t1 + bike * (120 / 180.2) },
-    { name: "BIKE CUT-OFF", limit: 630, eta: swim + t1 + bike },
-    { name: "FINISH LINE", limit: 960, eta: goal },
-  ];
-  const worst = Math.min(...rows.map((r) => r.limit - r.eta));
-  const failing = rows.find((r) => r.limit - r.eta < 0);
-  const tight = rows.reduce((a, b) => (a.limit - a.eta < b.limit - b.eta ? a : b));
-  const status: "clear" | "tight" | "fail" = failing ? "fail" : worst < 20 ? "tight" : "clear";
-  const verdictColor = { clear: "#2E7D53", tight: "#A9761A", fail: "#C0432E" }[status];
-  const verdictBg =
-    status === "clear" ? "rgba(95,175,119,.07)" : status === "tight" ? "rgba(216,155,44,.08)" : "rgba(216,65,47,.09)";
-  const verdictLabel = { clear: "Clears every cut-off", tight: "Tight — one binding barrier", fail: "Infeasible as set" }[status];
-  const verdictHead = failing
-    ? "This misses the " + failing.name.toLowerCase() + " by " + fmtClock(failing.eta - failing.limit) + "."
-    : "You clear the " + tight.name.toLowerCase() + " with " + fmtClock(worst) + " to spare.";
-  const verdictSub = failing
-    ? "The barrier fails before you reach the run. A solved plan would name the two levers that change it — bike power and time lost in transition."
-    : status === "tight"
-      ? "Under twenty minutes on the tightest barrier. One puncture and this becomes a decision made under pressure rather than in advance."
-      : "Comfortable at every barrier, so the plan can be built around finishing well rather than finishing at all.";
-
-  const line = toPath(el, 800, 350, 456);
-  const elevArea = line + " L 800 460 L 0 460 Z";
-  const routePath = rt.map((p, k) => (k ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ") + " Z";
-  const runPath = (() => {
-    let d = "";
-    for (let k = 0; k <= 70; k++) {
-      const a = (k / 70) * Math.PI * 2;
-      d += (k ? " L " : "M ") + (250 + 110 * Math.cos(a)).toFixed(1) + " " + (296 + 24 * Math.sin(a)).toFixed(1);
-    }
-    return d;
-  })();
-  const markers = [0.09, 0.24, 0.38, 0.52, 0.67, 0.86].map((f) => {
-    const p = rt[Math.round(f * (rt.length - 1))];
-    return { x: p[0].toFixed(1), y: p[1].toFixed(1) };
+/** The free cut-off calculator. Public, no account — it is the front door. */
+function useCutoffCheck(courseRef: string | null, projectedMinutes: number) {
+  return useQuery({
+    queryKey: ["courses", "cutoff-check", courseRef, projectedMinutes],
+    enabled: Boolean(courseRef),
+    queryFn: async (): Promise<CutoffCheck> => {
+      const body = await unwrap(
+        client.POST("/api/v1/courses/{course_ref}/cutoff-check", {
+          params: { path: { course_ref: courseRef! } },
+          body: { projected_minutes: projectedMinutes },
+        }),
+      );
+      return body as unknown as CutoffCheck;
+    },
+    // Every drag of the slider is a new key; keeping resolved ones warm makes
+    // dragging back and forth instant instead of re-fetching.
+    staleTime: 5 * 60_000,
+    placeholderData: (previous) => previous,
   });
-  const mp = rt[Math.round((hi / (el.length - 1)) * (rt.length - 1))];
-  const grad = hi > 0 ? ((el[hi] - el[hi - 1]) / (180200 / el.length)) * 100 : 0;
-  const km = 180.2 * (hi / (el.length - 1));
-  const pointNote =
-    km < 20
-      ? "Flat coastal road out of town. Hold back here — the first climb starts at km 42."
-      : km < 70
-        ? "Coll de Femenia. 8.4 km at 5.8% average, the single biggest power decision of the day."
-        : km < 110
-          ? "Technical descent, then the exposed plain. Aid station at km 92 with your special-needs bag."
-          : km < 150
-            ? "The valley drag. Headwind in eight of eleven editions, and where the bike cut-off is won or lost."
-            : "Rolling return to T2. Two short ramps, then flat into transition.";
+}
+
+function ReconContent() {
+  const params = useSearchParams();
+  const courses = useCourses();
+  // With no ?course= the page shows the first course in the directory rather
+  // than a hardcoded slug, so it stays correct whatever the directory holds.
+  const courseRef = params.get("course") ?? courses.data?.data[0]?.slug ?? null;
+
+  const { data: recon, isPending, error, refetch } = useRecon(courseRef);
+  const prices = usePrices();
+
+  if (error) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320 }}>
+        <AppHeader active="courseRecon" ctaLabel="Build your plan" ctaHref={routes.planBuilder} />
+        <div style={{ maxWidth: 720, margin: "80px auto", padding: "0 56px" }}>
+          <ApiErrorState error={error} onRetry={() => void refetch()} />
+          <Link href={routes.races} className="mono link-accent" style={{ display: "inline-block", marginTop: 24, fontSize: 11, letterSpacing: ".14em", color: "#C6461B" }}>
+            ← BACK TO THE DIRECTORY
+          </Link>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (isPending || !recon) return <ReconSkeleton />;
+  return <Recon_ recon={recon} priceLabel={priceLabelOf(prices.data)} />;
+}
+
+function priceLabelOf(prices: ReturnType<typeof usePrices>["data"]): string | null {
+  const p = priceFor(prices, "per_race", "GBP");
+  return p ? formatPrice(p.amount_cents, p.currency) : null;
+}
+
+function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null }) {
+  const { course, bundle, legs, totals, barriers, aid_stations: aid, segments } = recon;
+
+  const orderedLegs = useMemo(() => sortLegs(legs), [legs]);
+  const projection = useMemo(
+    () => projectLegs(orderedLegs, { width: MAP_W, height: ROUTE_H }, 18),
+    [orderedLegs],
+  );
+
+  const elevationLegs = recon.elevation_profile?.legs ?? {};
+  // The bike is the leg the map's profile is about — it is where a long-course
+  // race is decided, and the only leg with meaningful relief on these courses.
+  const chartLeg: Leg = elevationLegs.BIKE ? "BIKE" : orderedLegs[0]?.leg ?? "BIKE";
+  const chartProfile = elevationLegs[chartLeg];
+
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const series = chartProfile?.display;
+  const pointCount = series?.s_km.length ?? 0;
 
   const onHover = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!pointCount) return;
     const r = e.currentTarget.getBoundingClientRect();
     const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    setHoverOn(true);
-    setHi(Math.round(f * (el.length - 1)));
+    setHoverIndex(Math.round(f * (pointCount - 1)));
   };
 
-  const smallBike = toPath(bikeSmall, 320, 12, 76);
-  const smallBikeArea = smallBike + " L 320 76 L 0 76 Z";
-  const smallRun = toPath(runSmall, 320, 12, 76);
-  const smallRunArea = smallRun + " L 320 76 L 0 76 Z";
+  const hoverKm = hoverIndex != null && series ? series.s_km[hoverIndex] : null;
+  const hoverH = hoverIndex != null && series ? series.h_m[hoverIndex] : null;
 
-  const progressW = (((goal - 540) / 480) * 100).toFixed(1) + "%";
-  const clock = rows.map((r, k) => {
-    const m = r.limit - r.eta;
-    return {
-      name: r.name,
-      limit: fmtClock(r.limit),
-      eta: fmtClock(r.eta),
-      margin: (m >= 0 ? "+" : "") + fmtClock(m),
-      color: m < 0 ? "#C0432E" : m < 20 ? "#A9761A" : "#2E7D53",
-      left: [9, 37, 63, 91][k] + "%",
-    };
-  });
+  /**
+   * The segment the cursor is over, by name.
+   *
+   * These names come from the ingest pipeline (`name_source: DERIVED_TERRAIN`),
+   * so "Flat 1" and "Climb 3" are what the data actually says. The prototype's
+   * prose about Coll de Femenia and headwinds in eight of eleven editions was
+   * invented, and nothing serves it.
+   */
+  const hoverSegment = useMemo(() => {
+    if (hoverKm == null) return null;
+    return segments.find((s) => s.leg === chartLeg && hoverKm >= s.from_km && hoverKm <= s.to_km) ?? null;
+  }, [hoverKm, segments, chartLeg]);
 
-  const splits = [
-    { name: "Swim · 3.8 km", target: Math.round((swim * 60) / 38) + "s/100m", time: fmtClock(swim) },
-    { name: "T1", target: "transition", time: fmtClock(t1) },
-    { name: "Bike · 180.2 km", target: Math.round((180.2 / (bike / 60)) * 10) / 10 + " km/h", time: fmtClock(bike) },
-    { name: "T2", target: "transition", time: fmtClock(t2) },
-    { name: "Run · 42.2 km", target: fmtClock(run / 42.2) + "/km", time: fmtClock(run) },
-  ];
+  const chart = useMemo(
+    () => (chartProfile ? elevationPath(chartProfile, { width: MAP_W, top: ELEV_TOP, bottom: MAP_H }) : null),
+    [chartProfile],
+  );
 
-  const hmax = Math.max(...FINISH_HIST);
-  const youIdx = Math.max(0, Math.min(15, Math.round(((goal - 540) / 480) * 15)));
-  const hist = FINISH_HIST.map((v, k) => ({
-    x: k * 30 + 2,
-    y: 200 - (v / hmax) * 186,
-    h: (v / hmax) * 186,
-    fill: k === youIdx ? "#E4622F" : "rgba(21,20,15,.16)",
-  }));
-  const youX = youIdx * 30 + 14;
-  const percentile = (() => {
-    const below = FINISH_HIST.slice(0, youIdx).reduce((a, b) => a + b, 0);
-    const tot = FINISH_HIST.reduce((a, b) => a + b, 0);
-    return Math.round((below / tot) * 100) + "%";
-  })();
+  const [goal, setGoal] = useState(() => Math.round(totals.final_cutoff_minutes ?? 720));
+  const cutoff = useCutoffCheck(course.slug, goal);
+  const cutoffRows = cutoff.data?.barriers ?? [];
+  const worstMargin = cutoffRows.length ? Math.min(...cutoffRows.map((r) => r.margin_minutes)) : null;
+  const failing = cutoffRows.find((r) => r.margin_minutes < 0);
+  const tightest = cutoffRows.length
+    ? cutoffRows.reduce((a, b) => (a.margin_minutes < b.margin_minutes ? a : b))
+    : null;
+
+  const status: "clear" | "tight" | "fail" = failing ? "fail" : (worstMargin ?? 0) < 20 ? "tight" : "clear";
+  const verdictColor = { clear: "#2E7D53", tight: "#A9761A", fail: "#C0432E" }[status];
+  const verdictBg = status === "clear" ? "rgba(95,175,119,.07)" : status === "tight" ? "rgba(216,155,44,.08)" : "rgba(216,65,47,.09)";
+  const verdictLabel = { clear: "Clears every cut-off", tight: "Tight — one binding barrier", fail: "Infeasible as set" }[status];
+
+  const provLabel = bundle.provenance ?? "UNVERIFIED";
+  const provTone = provLabel === "OFFICIAL" ? "#8FCBA0" : "#E0B36A";
+
+  /** Slider bounds from the course's own barriers, not a guessed 09:00–17:00. */
+  const finishLimit = Math.max(...barriers.map((b) => b.limit_minutes_from_start), 60);
+  const sliderMin = Math.round(finishLimit * 0.45);
+  const sliderMax = Math.round(finishLimit * 1.1);
+
+  const provCounts = aid.reduce<Record<string, number>>((acc, s) => {
+    const k = s.provenance ?? "UNVERIFIED";
+    acc[k] = (acc[k] ?? 0) + 1;
+    return acc;
+  }, {});
+  const runGap = widestGapKm(aid, "RUN");
+  const bikeGap = widestGapKm(aid, "BIKE");
 
   return (
     <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320 }}>
@@ -149,157 +174,148 @@ export default function CourseReconPage() {
 
       {/* ---------------- Hero ---------------- */}
       <section style={{ position: "relative", height: "66vh", minHeight: 520, background: "#1C1916", overflow: "hidden" }}>
-        <MediaPlaceholder
-          path="assets/courses/tramuntana-hero.jpg"
-          background="linear-gradient(155deg,#453B31 0%,#251F1A 52%,#13110F 100%)"
-          style={{ position: "absolute", inset: 0 }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background: "linear-gradient(to top,rgba(12,11,10,.9) 0%,rgba(12,11,10,.3) 55%,rgba(12,11,10,.45) 100%)",
-          }}
-        />
-        <div className="mono" style={{ position: "absolute", left: 56, top: 28, fontSize: 9.5, letterSpacing: ".16em", color: "rgba(255,255,255,.4)" }}>
-          ASSETS/COURSES/TRAMUNTANA-HERO.JPG · 21:9
-        </div>
+        <MediaPlaceholder path="assets/courses/course-hero.jpg" background="linear-gradient(155deg,#453B31 0%,#251F1A 52%,#13110F 100%)" style={{ position: "absolute", inset: 0 }} />
+        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top,rgba(12,11,10,.9) 0%,rgba(12,11,10,.3) 55%,rgba(12,11,10,.45) 100%)" }} />
         <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxWidth: 1360, margin: "0 auto", padding: "0 56px 44px" }}>
           <div className="mono" style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 10, letterSpacing: ".15em", color: "rgba(255,255,255,.45)", marginBottom: 22 }}>
             <Link href={routes.home} style={{ color: "rgba(255,255,255,.45)" }}>RACEOS</Link>
             <span>/</span>
-            <span style={{ color: "rgba(255,255,255,.8)" }}>TRAMUNTANA FULL 2026</span>
+            <Link href={routes.races} style={{ color: "rgba(255,255,255,.45)" }}>COURSES</Link>
+            <span>/</span>
+            <span style={{ color: "rgba(255,255,255,.8)" }}>{course.name.toUpperCase()}</span>
           </div>
           <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 56 }}>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
-                <span
-                  className="mono"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 7,
-                    padding: "5px 10px",
-                    border: "1px solid rgba(124,192,143,.45)",
-                    borderRadius: 4,
-                    fontSize: 9.5,
-                    letterSpacing: ".14em",
-                    color: "#8FCBA0",
-                  }}
-                >
-                  <span style={{ width: 5, height: 5, background: "#7CC08F", borderRadius: "50%" }} />OFFICIAL COURSE
+                {/* Whatever provenance the API returns. Nothing claims OFFICIAL. */}
+                <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 10px", border: `1px solid ${provTone}55`, borderRadius: 4, fontSize: 9.5, letterSpacing: ".14em", color: provTone }}>
+                  <span style={{ width: 5, height: 5, background: provTone, borderRadius: "50%" }} />{provLabel}
                 </span>
-                <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.4)" }}>VERIFIED 04 MAR 2026</span>
+                {bundle.verified_at ? (
+                  <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.4)" }}>
+                    VERIFIED {new Date(bundle.verified_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}
+                  </span>
+                ) : (
+                  <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.4)" }}>NOT YET VERIFIED</span>
+                )}
+                {course.is_fictional && (
+                  <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.4)" }}>FICTIONAL COURSE</span>
+                )}
               </div>
-              <h1 data-reveal="out" style={{ whiteSpace: "nowrap", margin: 0, fontSize: 92, lineHeight: 0.9, fontWeight: 600, letterSpacing: "-.05em", color: "#FBF8F2" }}>
-                Tramuntana Full
-              </h1>
+              <h1 style={{ whiteSpace: "nowrap", margin: 0, fontSize: 92, lineHeight: 0.9, fontWeight: 600, letterSpacing: "-.05em", color: "#FBF8F2" }}>{course.name}</h1>
+              {/* No date and no start time: those belong to a race, not a course. */}
               <div style={{ display: "flex", gap: 22, marginTop: 20, fontSize: 16, color: "rgba(255,255,255,.66)", whiteSpace: "nowrap" }}>
-                <span>Port de Pollença, Mallorca</span>
+                <span>{course.place}</span>
                 <span style={{ color: "rgba(255,255,255,.3)" }}>·</span>
-                <span>Sunday 21 June 2026</span>
+                <span>{course.distance_type}</span>
                 <span style={{ color: "rgba(255,255,255,.3)" }}>·</span>
-                <span>06:40 rolling start</span>
+                <span>{course.difficulty.toLowerCase()}</span>
               </div>
             </div>
             <div style={{ display: "flex", gap: 12, flex: "none" }}>
-              <a
-                href="#cutoffs"
-                className="btn-outline-fade"
-                style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 50, padding: "0 24px", border: "1px solid rgba(255,255,255,.28)", borderRadius: 6, fontSize: 15, fontWeight: 600, color: "#FBF8F2" }}
-              >
-                Check my cut-offs
-              </a>
-              <a
-                href="#convert"
-                className="btn-accent-invert"
-                style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 50, padding: "0 26px", background: "#E4622F", color: "#fff", borderRadius: 6, fontSize: 15, fontWeight: 600 }}
-              >
-                Build your plan
-              </a>
+              <a href="#cutoffs" className="btn-outline-fade" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 50, padding: "0 24px", border: "1px solid rgba(255,255,255,.28)", borderRadius: 6, fontSize: 15, fontWeight: 600, color: "#FBF8F2" }}>Check my cut-offs</a>
+              <a href="#convert" className="btn-accent-invert" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 50, padding: "0 26px", background: "#E4622F", color: "#fff", borderRadius: 6, fontSize: 15, fontWeight: 600 }}>Build your plan</a>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ---------------- Map + layers ---------------- */}
+      {/* ---------------- Map + elevation, both from real geometry ---------------- */}
       <section style={{ maxWidth: 1360, margin: "34px auto 0", padding: "0 56px" }}>
         <div style={{ background: "#15140F", borderRadius: 9, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 316px" }}>
-            <div onMouseMove={onHover} onMouseLeave={() => setHoverOn(false)} style={{ position: "relative", background: "#0B0A09", cursor: "crosshair" }}>
-              <svg viewBox="0 0 800 460" style={{ display: "block", width: "100%", height: "auto" }}>
+            <div onMouseMove={onHover} onMouseLeave={() => setHoverIndex(null)} style={{ position: "relative", background: "#0B0A09", cursor: "crosshair" }}>
+              <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} style={{ display: "block", width: "100%", height: "auto" }} role="img" aria-label={`Route and bike elevation profile for ${course.name}`}>
                 <defs>
                   <linearGradient id="cr-fill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#E4622F" stopOpacity={0.26} />
                     <stop offset="100%" stopColor="#E4622F" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <path d={routePath} fill="none" stroke="rgba(255,255,255,.34)" strokeWidth={1.8} strokeLinejoin="round" />
-                <path d={runPath} fill="none" stroke="rgba(255,255,255,.18)" strokeWidth={1.5} strokeDasharray="5 5" />
-                <rect x={70} y={258} width={70} height={36} rx={5} fill="none" stroke="rgba(255,255,255,.22)" strokeWidth={1.4} strokeDasharray="3 4" />
-                <text x={105} y={311} textAnchor="middle" fill="#6B665B" fontFamily="JetBrains Mono, monospace" fontSize={9} letterSpacing={1.2}>SWIM</text>
-                {markers.map((m, k) => (
-                  <circle key={k} cx={m.x} cy={m.y} r={4} fill="#0B0A09" stroke="rgba(255,255,255,.6)" strokeWidth={1.4} />
+
+                {/* The real route: legs[].coordinates, GeoJSON order, one shared projection. */}
+                {projection?.paths.map((p) => (
+                  <path
+                    key={p.leg}
+                    d={p.d}
+                    fill="none"
+                    stroke={p.leg === "BIKE" ? "rgba(255,255,255,.42)" : "rgba(255,255,255,.24)"}
+                    strokeWidth={p.leg === "BIKE" ? 1.9 : 1.5}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    strokeDasharray={p.leg === "RUN" ? "5 5" : undefined}
+                  />
                 ))}
-                {hoverOn && <circle cx={mp[0].toFixed(1)} cy={mp[1].toFixed(1)} r={7} fill="#E4622F" stroke="#0B0A09" strokeWidth={2.4} />}
-                <path d={elevArea} fill="url(#cr-fill)" />
-                <path d={line} fill="none" stroke="#E4622F" strokeWidth={1.8} strokeLinejoin="round" />
-                {hoverOn && <line x1={((hi / (el.length - 1)) * 800).toFixed(1)} y1={340} x2={((hi / (el.length - 1)) * 800).toFixed(1)} y2={460} stroke="rgba(255,255,255,.42)" strokeWidth={1} />}
+
+                {/* An aid station is drawn where it actually is, by interpolating its
+                    km along the leg it belongs to. */}
+                {projection && aid.map((s, i) => {
+                  const legRow = orderedLegs.find((l) => l.leg === s.leg);
+                  if (!legRow?.coordinates.length) return null;
+                  const f = Math.max(0, Math.min(1, (s.km * 1000) / legRow.distance_m));
+                  const c = legRow.coordinates[Math.round(f * (legRow.coordinates.length - 1))];
+                  const [x, y] = projection.project(c[0], c[1]);
+                  return <circle key={`${s.leg}-${s.km}-${i}`} cx={x} cy={y} r={3.4} fill="#0B0A09" stroke="rgba(255,255,255,.55)" strokeWidth={1.3} />;
+                })}
+
+                {/* Cut-off barriers, same interpolation, diamond to distinguish them. */}
+                {projection && barriers.map((b, i) => {
+                  const legRow = orderedLegs.find((l) => l.leg === b.leg);
+                  if (!legRow?.coordinates.length) return null;
+                  const f = Math.max(0, Math.min(1, (b.km * 1000) / legRow.distance_m));
+                  const c = legRow.coordinates[Math.round(f * (legRow.coordinates.length - 1))];
+                  const [x, y] = projection.project(c[0], c[1]);
+                  return <rect key={`${b.name}-${i}`} x={x - 3.6} y={y - 3.6} width={7.2} height={7.2} fill="none" stroke="#E4622F" strokeWidth={1.5} transform={`rotate(45 ${x} ${y})`} />;
+                })}
+
+                {/* The real elevation series for the bike leg. */}
+                {chart && <path d={chart.area} fill="url(#cr-fill)" />}
+                {chart && <path d={chart.line} fill="none" stroke="#E4622F" strokeWidth={1.8} strokeLinejoin="round" />}
+                {chart && hoverIndex != null && pointCount > 1 && (
+                  <line x1={((hoverIndex / (pointCount - 1)) * MAP_W).toFixed(1)} y1={ELEV_TOP - 8} x2={((hoverIndex / (pointCount - 1)) * MAP_W).toFixed(1)} y2={MAP_H} stroke="rgba(255,255,255,.42)" strokeWidth={1} />
+                )}
               </svg>
-              <div style={{ position: "absolute", left: 20, top: 18, display: "flex", gap: 6, padding: 4, background: "rgba(255,255,255,.07)", borderRadius: 6 }}>
-                <span className="mono" style={{ padding: "5px 13px", borderRadius: 6, background: "#E4622F", color: "#fff", fontSize: 10, letterSpacing: ".1em" }}>2D</span>
-                <span className="mono" style={{ padding: "5px 13px", borderRadius: 6, color: "#7C7669", fontSize: 10, letterSpacing: ".1em" }}>3D</span>
-              </div>
+
               <div className="mono" style={{ position: "absolute", left: 20, bottom: 16, fontSize: 9.5, letterSpacing: ".12em", color: "#6B665B" }}>
-                BIKE PROFILE · 180.2 KM · 2,340 M GAIN · MAX GRADIENT 12.4%
+                {chartLeg} PROFILE · {chartProfile ? `${formatKm(chartProfile.distance_m)} KM · ${formatMetres(chartProfile.gain_m)} M GAIN · MAX ${formatMetres(chartProfile.max_m)} M` : "NO PROFILE"}
               </div>
               <div className="mono" style={{ position: "absolute", right: 20, top: 18, display: "flex", gap: 16, fontSize: 11, color: "#FBF8F2" }}>
-                {hoverOn && <span>{km.toFixed(1)} km</span>}
-                {hoverOn && <span>{Math.round(el[hi])} m</span>}
-                {hoverOn && <span style={{ color: "#E4622F" }}>{grad.toFixed(1)}%</span>}
+                {hoverKm != null && <span>{hoverKm.toFixed(1)} km</span>}
+                {hoverH != null && <span>{Math.round(hoverH)} m</span>}
               </div>
             </div>
 
             <div style={{ borderLeft: "1px solid rgba(255,255,255,.09)", padding: "22px 24px", color: "#FBF8F2" }}>
-              <div className="mono" style={{ fontSize: 10, letterSpacing: ".15em", color: "#5A554C" }}>LAYERS</div>
+              <div className="mono" style={{ fontSize: 10, letterSpacing: ".15em", color: "#5A554C" }}>ON THIS MAP</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 14 }}>
                 {[
-                  { label: "Race route", swatch: <span style={{ width: 14, height: 2, background: "rgba(255,255,255,.5)" }} />, status: "ON" },
-                  { label: "Aid stations", swatch: <span style={{ width: 8, height: 8, border: "1.4px solid rgba(255,255,255,.6)", borderRadius: "50%" }} />, status: "ON · 11" },
-                  { label: "Transitions", swatch: <span style={{ width: 8, height: 8, background: "rgba(255,255,255,.55)" }} />, status: "ON · 2" },
-                  { label: "Cut-off points", swatch: <span style={{ width: 8, height: 8, border: "1.4px solid #E4622F", transform: "rotate(45deg)" }} />, status: "ON · 4" },
-                  { label: "Gradient heat", swatch: <span style={{ width: 14, height: 2, background: "rgba(255,255,255,.18)" }} />, status: "OFF", off: true },
-                  { label: "Spectator zones", swatch: <span style={{ width: 14, height: 2, background: "rgba(255,255,255,.18)" }} />, status: "OFF · 6", off: true },
+                  ...orderedLegs.map((l) => ({
+                    label: `${l.leg.charAt(0)}${l.leg.slice(1).toLowerCase()} route`,
+                    swatch: <span style={{ width: 14, height: 2, background: l.leg === "BIKE" ? "rgba(255,255,255,.5)" : "rgba(255,255,255,.28)" }} />,
+                    status: `${formatKm(l.distance_m)} km`,
+                  })),
+                  { label: "Aid stations", swatch: <span style={{ width: 8, height: 8, border: "1.4px solid rgba(255,255,255,.6)", borderRadius: "50%" }} />, status: String(aid.length) },
+                  { label: "Cut-off points", swatch: <span style={{ width: 8, height: 8, border: "1.4px solid #E4622F", transform: "rotate(45deg)" }} />, status: String(barriers.length) },
                 ].map((layer, i, arr) => (
-                  <div
-                    key={layer.label}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "9px 0",
-                      borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,.06)" : undefined,
-                    }}
-                  >
-                    <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13.5, color: layer.off ? "#6B665B" : "#CFC9BC" }}>
-                      {layer.swatch}
-                      {layer.label}
-                    </span>
-                    <span className="mono" style={{ fontSize: 10, color: layer.off ? "#5A554C" : "#7CC08F" }}>{layer.status}</span>
+                  <div key={layer.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,.06)" : undefined }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13.5, color: "#CFC9BC" }}>{layer.swatch}{layer.label}</span>
+                    <span className="mono" style={{ fontSize: 10, color: "#7CC08F" }}>{layer.status}</span>
                   </div>
                 ))}
               </div>
               <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,.09)" }}>
                 <div className="mono" style={{ fontSize: 10, letterSpacing: ".15em", color: "#5A554C" }}>AT THIS POINT</div>
                 <div className="mono" style={{ marginTop: 14, fontSize: 32, letterSpacing: "-.02em" }}>
-                  {km.toFixed(1)}
+                  {hoverKm == null ? "—" : hoverKm.toFixed(1)}
                   <span style={{ fontSize: 14, color: "#5A554C" }}> km</span>
                 </div>
-                <div style={{ marginTop: 10, fontSize: 13.5, lineHeight: 1.55, color: "#96907F" }}>{pointNote}</div>
+                <div style={{ marginTop: 10, fontSize: 13.5, lineHeight: 1.55, color: "#96907F" }}>
+                  {hoverSegment
+                    ? `${hoverSegment.name} · ${hoverSegment.from_km.toFixed(1)}–${hoverSegment.to_km.toFixed(1)} km · ${formatMetres(hoverSegment.elevation_gain_m)} m gain · ${hoverSegment.surface_quality.replace(/_/g, " ")}`
+                    : "Move across the profile to read a segment."}
+                </div>
               </div>
-              <div style={{ marginTop: 20, padding: "12px 14px", borderRadius: 8, background: "rgba(255,255,255,.05)", fontSize: 12.5, lineHeight: 1.5, color: "#7C7669" }}>
-                A structured text description of this course is available as a full alternative to the map.
-              </div>
+              <OsmAttribution attribution={bundle.attribution} tone="dark" style={{ marginTop: 20 }} />
             </div>
           </div>
         </div>
@@ -309,80 +325,86 @@ export default function CourseReconPage() {
       <div style={{ position: "sticky", top: 68, zIndex: 40, background: "rgba(241,238,232,.92)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(21,20,15,.10)", marginTop: 44 }}>
         <div className="mono" style={{ maxWidth: 1360, margin: "0 auto", padding: "0 56px", height: 52, display: "flex", alignItems: "center", gap: 32, fontSize: 10.5, letterSpacing: ".14em" }}>
           {SUBNAV.map((s) => (
-            <a key={s.href} href={s.href} style={{ color: s.href === "#cutoffs" ? "#E4622F" : "#8C8578" }}>
-              {s.label}
-            </a>
+            <a key={s.href} href={s.href} style={{ color: s.href === "#cutoffs" ? "#E4622F" : "#8C8578" }}>{s.label}</a>
           ))}
-          <span style={{ marginLeft: "auto", color: "#8C8578" }}>SEASON 2026</span>
+          <span style={{ marginLeft: "auto", color: "#8C8578" }}>BUNDLE {bundle.version.toUpperCase()}</span>
         </div>
       </div>
 
       {/* ---------------- Overview ---------------- */}
       <section id="overview" style={{ maxWidth: 1360, margin: "0 auto", padding: "64px 56px 0" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 1, background: "rgba(21,20,15,.14)", borderTop: "1px solid rgba(21,20,15,.14)", borderBottom: "1px solid rgba(21,20,15,.14)" }}>
-          {[
-            { label: "SWIM", value: "3.8", unit: "km", note: "Two-lap sea swim, anticlockwise, beach exit" },
-            { label: "BIKE", value: "180.2", unit: "km", note: "One loop, 2,340 m gain, three sustained climbs" },
-            { label: "RUN", value: "42.2", unit: "km", note: "Four seafront laps, 210 m gain, unlit after km 30" },
-            { label: "TOTAL CUT-OFF", value: "16:00", unit: "", note: "Four barriers, tightest is the bike at 10:30" },
-          ].map((c) => (
-            <div key={c.label} style={{ background: "#F1EEE8", padding: "26px 28px 30px" }}>
-              <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: "#8C8578" }}>{c.label}</div>
-              <div className="mono" style={{ fontSize: 38, letterSpacing: "-.03em", marginTop: 12 }}>
-                {c.value}
-                {c.unit && <span style={{ fontSize: 16, color: "#8C8578" }}> {c.unit}</span>}
+          {orderedLegs.map((l) => {
+            const p = elevationLegs[l.leg];
+            return (
+              <div key={l.leg} style={{ background: "#F1EEE8", padding: "26px 28px 30px" }}>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: "#8C8578" }}>{l.leg}</div>
+                <div className="mono" style={{ fontSize: 38, letterSpacing: "-.03em", marginTop: 12 }}>
+                  {formatKm(l.distance_m)}<span style={{ fontSize: 16, color: "#8C8578" }}> km</span>
+                </div>
+                <div style={{ fontSize: 14, color: "#5C574B", marginTop: 10 }}>
+                  {formatMetres(l.elevation_gain_m)} m gain
+                  {p && p.laps > 1 ? ` · ${p.laps} laps` : ""}
+                  {` · ${l.surface_quality.replace(/_/g, " ")}`}
+                </div>
               </div>
-              <div style={{ fontSize: 14, color: "#5C574B", marginTop: 10 }}>{c.note}</div>
+            );
+          })}
+          <div style={{ background: "#F1EEE8", padding: "26px 28px 30px" }}>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: "#8C8578" }}>TIGHTEST CUT-OFF</div>
+            <div className="mono" style={{ fontSize: 38, letterSpacing: "-.03em", marginTop: 12 }}>
+              {totals.final_cutoff_minutes == null ? "—" : formatClock(totals.final_cutoff_minutes)}
             </div>
-          ))}
+            <div style={{ fontSize: 14, color: "#5C574B", marginTop: 10 }}>
+              {barriers.length} {barriers.length === 1 ? "barrier" : "barriers"}
+              {totals.final_cutoff_name ? ` · ${formatBarrierName(totals.final_cutoff_name).toLowerCase()}` : ""}
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ---------------- Elevation ---------------- */}
+      {/* ---------------- Elevation, one card per leg ---------------- */}
       <section id="elevation" style={{ maxWidth: 1360, margin: "0 auto", padding: "96px 56px 0" }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", borderTop: "1px solid rgba(21,20,15,.14)", paddingTop: 26 }}>
-          <Reveal as="h2" style={{ margin: 0, fontSize: 44, lineHeight: 1.02, fontWeight: 700, letterSpacing: "-.045em" }}>
-            Where the course takes it out of you.
-          </Reveal>
-          <span className="mono" style={{ fontSize: 10.5, letterSpacing: ".13em", color: "#8C8578" }}>ELEVATION SAMPLED FROM TERRAIN, NOT BAROMETERS</span>
+          <Reveal as="h2" style={{ margin: 0, fontSize: 44, lineHeight: 1.02, fontWeight: 700, letterSpacing: "-.045em" }}>Where the course takes it out of you.</Reveal>
+          <span className="mono" style={{ fontSize: 10.5, letterSpacing: ".13em", color: "#8C8578" }}>
+            ELEVATION FROM {(bundle.elevation_source ?? "terrain").toUpperCase()}, NOT BAROMETERS
+          </span>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20, marginTop: 36 }}>
-          <div style={{ background: "#FBF8F2", border: "1px solid rgba(21,20,15,.14)", borderRadius: 8, padding: "22px 24px 18px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-.02em" }}>Swim</span>
-              <span className="mono" style={{ fontSize: 11, color: "#8C8578" }}>SEA LEVEL · 2 LAPS</span>
-            </div>
-            <svg viewBox="0 0 320 90" style={{ display: "block", width: "100%", marginTop: 18 }}>
-              <line x1={0} y1={70} x2={320} y2={70} stroke="rgba(46,111,142,.4)" strokeWidth={1.6} />
-              <circle cx={20} cy={70} r={3.5} fill="#2E6F8E" />
-              <circle cx={160} cy={70} r={3} fill="none" stroke="#2E6F8E" strokeWidth={1.4} />
-              <circle cx={300} cy={70} r={3.5} fill="#E4622F" />
-            </svg>
-            <div style={{ fontSize: 13.5, color: "#5C574B", marginTop: 6 }}>No profile to render. Current runs south-west on the second lap.</div>
-          </div>
-          <div style={{ background: "#FBF8F2", border: "1px solid rgba(21,20,15,.14)", borderRadius: 8, padding: "22px 24px 18px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-.02em" }}>Bike</span>
-              <span className="mono" style={{ fontSize: 11, color: "#8C8578" }}>2,340 M · MAX 12.4%</span>
-            </div>
-            <svg viewBox="0 0 320 90" style={{ display: "block", width: "100%", marginTop: 18 }}>
-              <path d={smallBikeArea} fill="rgba(228,98,47,.14)" />
-              <path d={smallBike} fill="none" stroke="#E4622F" strokeWidth={1.6} />
-            </svg>
-            <div style={{ fontSize: 13.5, color: "#5C574B", marginTop: 6 }}>Coll de Femenia at km 54, the long valley drag from km 118.</div>
-          </div>
-          <div style={{ background: "#FBF8F2", border: "1px solid rgba(21,20,15,.14)", borderRadius: 8, padding: "22px 24px 18px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-.02em" }}>Run</span>
-              <span className="mono" style={{ fontSize: 11, color: "#8C8578" }}>210 M · 4 LAPS</span>
-            </div>
-            <svg viewBox="0 0 320 90" style={{ display: "block", width: "100%", marginTop: 18 }}>
-              <path d={smallRunArea} fill="rgba(100,112,122,.13)" />
-              <path d={smallRun} fill="none" stroke="#64707A" strokeWidth={1.7} strokeLinejoin="round" strokeLinecap="round" />
-            </svg>
-            <div style={{ fontSize: 13.5, color: "#5C574B", marginTop: 6 }}>One 24 m ramp per lap at the marina, taken four times.</div>
-          </div>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${orderedLegs.length},1fr)`, gap: 20, marginTop: 36 }}>
+          {orderedLegs.map((l) => {
+            const p = elevationLegs[l.leg];
+            const small = p ? elevationPath(p, { width: 320, top: 12, bottom: 76 }) : null;
+            const flat = !p || p.gain_m <= 0;
+            return (
+              <div key={l.leg} style={{ background: "#FBF8F2", border: "1px solid rgba(21,20,15,.14)", borderRadius: 8, padding: "22px 24px 18px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                  <span style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-.02em" }}>{l.leg.charAt(0) + l.leg.slice(1).toLowerCase()}</span>
+                  <span className="mono" style={{ fontSize: 11, color: "#8C8578" }}>
+                    {flat ? "SEA LEVEL" : `${formatMetres(p!.gain_m)} M · MAX ${formatMetres(p!.max_m)} M`}
+                    {p && p.laps > 1 ? ` · ${p.laps} LAPS` : ""}
+                  </span>
+                </div>
+                <svg viewBox="0 0 320 90" style={{ display: "block", width: "100%", marginTop: 18 }} role="img" aria-label={`${l.leg} elevation profile`}>
+                  {flat || !small ? (
+                    <line x1={0} y1={70} x2={320} y2={70} stroke={`${LEG_COLOR[l.leg]}66`} strokeWidth={1.6} />
+                  ) : (
+                    <>
+                      <path d={small.area} fill={`${LEG_COLOR[l.leg]}22`} />
+                      <path d={small.line} fill="none" stroke={LEG_COLOR[l.leg]} strokeWidth={1.7} strokeLinejoin="round" strokeLinecap="round" />
+                    </>
+                  )}
+                </svg>
+                <div style={{ fontSize: 13.5, color: "#5C574B", marginTop: 6 }}>
+                  {flat
+                    ? "No relief to render — this leg is flat."
+                    : `${formatKm(l.distance_m)} km, ${formatMetres(p!.gain_m)} m up and ${formatMetres(p!.loss_m)} m down.`}
+                </div>
+              </div>
+            );
+          })}
         </div>
+        <OsmAttribution attribution={bundle.attribution} style={{ marginTop: 18 }} />
       </section>
 
       {/* ---------------- Aid stations ---------------- */}
@@ -391,84 +413,78 @@ export default function CourseReconPage() {
           <div>
             <div className="mono" style={{ fontSize: 10, letterSpacing: ".18em", color: "#E4622F", marginBottom: 18 }}>SUPPLY MAP</div>
             <Reveal as="h2" style={{ margin: 0, fontSize: 52, lineHeight: 0.98, fontWeight: 600, letterSpacing: "-.045em" }}>
-              Eleven aid stations.
+              {aid.length} aid {aid.length === 1 ? "station" : "stations"}.
             </Reveal>
           </div>
           <div style={{ display: "flex", gap: 34, paddingBottom: 6 }}>
-            {[
-              { v: "9", l: "OFFICIAL" },
-              { v: "2", l: "CROWD-VERIFIED" },
-              { v: "5.3", u: "km", l: "WIDEST RUN GAP" },
-            ].map((s) => (
-              <div key={s.l}>
-                <div className="mono" style={{ fontSize: 25, letterSpacing: "-.03em" }}>
-                  {s.v}
-                  {s.u && <span style={{ fontSize: 13, color: "#8C8578" }}>{s.u}</span>}
-                </div>
-                <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578", marginTop: 6 }}>{s.l}</div>
+            {Object.entries(provCounts).map(([label, count]) => (
+              <div key={label}>
+                <div className="mono" style={{ fontSize: 25, letterSpacing: "-.03em" }}>{count}</div>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578", marginTop: 6 }}>{label}</div>
               </div>
             ))}
+            {bikeGap != null && (
+              <div>
+                <div className="mono" style={{ fontSize: 25, letterSpacing: "-.03em" }}>{bikeGap.toFixed(1)}<span style={{ fontSize: 13, color: "#8C8578" }}>km</span></div>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578", marginTop: 6 }}>WIDEST BIKE GAP</div>
+              </div>
+            )}
+            {runGap != null && (
+              <div>
+                <div className="mono" style={{ fontSize: 25, letterSpacing: "-.03em" }}>{runGap.toFixed(1)}<span style={{ fontSize: 13, color: "#8C8578" }}>km</span></div>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578", marginTop: 6 }}>WIDEST RUN GAP</div>
+              </div>
+            )}
           </div>
         </div>
 
         <Reveal style={{ background: "#FBF8F2", borderRadius: 8, padding: 14, boxShadow: "0 30px 60px -46px rgba(21,20,15,.3)" }}>
           <div style={{ position: "relative", padding: "22px 0 10px" }}>
             <div style={{ position: "absolute", left: 150, top: 34, bottom: 34, width: 2, background: "linear-gradient(to bottom,rgba(21,20,15,.06),rgba(228,98,47,.35),rgba(21,20,15,.06))" }} />
-            {aid.map((a) => (
-              <div
-                key={a.name}
-                className="row-hover-cream"
-                style={{ position: "relative", display: "grid", gridTemplateColumns: "150px 44px minmax(0,1fr) 150px", alignItems: "center", gap: 0, padding: "14px 24px 14px 0", borderRadius: 8 }}
-              >
-                <div style={{ textAlign: "right", paddingRight: 26 }}>
-                  <div className="mono" style={{ fontSize: 19, letterSpacing: "-.03em" }}>{a.km}</div>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: a.legColor, marginTop: 5 }}>{a.leg}</div>
+            {sortLegs(aid).map((s, i) => {
+              const official = s.provenance === "OFFICIAL";
+              return (
+                <div key={`${s.leg}-${s.km}-${i}`} className="row-hover-cream" style={{ position: "relative", display: "grid", gridTemplateColumns: "150px 44px minmax(0,1fr) 150px", alignItems: "center", padding: "14px 24px 14px 0", borderRadius: 8 }}>
+                  <div style={{ textAlign: "right", paddingRight: 26 }}>
+                    <div className="mono" style={{ fontSize: 19, letterSpacing: "-.03em" }}>{s.km.toFixed(1)} km</div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: LEG_COLOR[s.leg], marginTop: 5 }}>{s.leg}</div>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "center" }}>
+                    <span style={{ width: 13, height: 13, borderRadius: "50%", background: official ? "#E4622F" : "#FBF8F2", border: "2.5px solid #FBF8F2", boxShadow: `0 0 0 2px ${official ? "rgba(228,98,47,.28)" : "rgba(21,20,15,.22)"}` }} />
+                  </div>
+                  <div style={{ paddingLeft: 22 }}>
+                    <div style={{ fontSize: 17.5, fontWeight: 600, letterSpacing: "-.025em" }}>{s.name}</div>
+                    {/* Tokens formatted to prose. Nothing added that the API did not send. */}
+                    <div style={{ fontSize: 14, color: "#6B6455", marginTop: 4 }}>{formatContents(s.contents)}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 11px", borderRadius: 4, background: official ? "#EAF5EE" : "#F1EDE4", fontSize: 9, letterSpacing: ".12em", color: official ? "#2E7D53" : "#8C8578", whiteSpace: "nowrap" }}>
+                      <span style={{ width: 4, height: 4, borderRadius: "50%", background: official ? "#2E7D53" : "#8C8578" }} />
+                      {s.provenance ?? "UNVERIFIED"}
+                    </span>
+                  </div>
                 </div>
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <span style={{ width: 13, height: 13, borderRadius: "50%", background: a.dotBg, border: "2.5px solid #FBF8F2", boxShadow: `0 0 0 2px ${a.dotRing}` }} />
-                </div>
-                <div style={{ paddingLeft: 22 }}>
-                  <div style={{ fontSize: 17.5, fontWeight: 600, letterSpacing: "-.025em" }}>{a.name}</div>
-                  <div style={{ fontSize: 14, color: "#6B6455", marginTop: 4 }}>{a.contents}</div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <span
-                    className="mono"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 11px", borderRadius: 4, background: a.chipBg, fontSize: 9, letterSpacing: ".12em", color: a.chipFg, whiteSpace: "nowrap" }}
-                  >
-                    <span style={{ width: 4, height: 4, borderRadius: "50%", background: a.chipFg }} />
-                    {a.prov}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, margin: "6px 10px 6px", padding: "16px 18px", borderRadius: 8, background: "#F4F1E9" }}>
-            <span style={{ fontSize: 14, color: "#6B6455" }}>Two stations appear in athlete files but not the published guide. They carry the mark on screen and in print.</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, margin: "6px 10px", padding: "16px 18px", borderRadius: 8, background: "#F4F1E9" }}>
+            <span style={{ fontSize: 14, color: "#6B6455" }}>
+              Every station carries its provenance, on screen and in print. Contents are listed exactly as published — nothing is assumed to be there.
+            </span>
             <a href="#convert" className="mono link-accent" style={{ fontSize: 10, letterSpacing: ".14em", color: "#C6461B", whiteSpace: "nowrap" }}>SOLVE MY FUELLING →</a>
           </div>
         </Reveal>
       </section>
 
-      {/* ---------------- Cut-off clock ---------------- */}
-      <section
-        id="cutoffs"
-        style={{ marginTop: 104, padding: "96px 0 100px", background: "#EAE3D6", backgroundImage: "radial-gradient(rgba(21,20,15,.07) 1px, transparent 1px)", backgroundSize: "22px 22px" }}
-      >
+      {/* ---------------- Cut-off clock, from POST /cutoff-check ---------------- */}
+      <section id="cutoffs" style={{ marginTop: 104, padding: "96px 0 100px", background: "#EAE3D6", backgroundImage: "radial-gradient(rgba(21,20,15,.07) 1px, transparent 1px)", backgroundSize: "22px 22px" }}>
         <div style={{ maxWidth: 1360, margin: "0 auto", padding: "0 56px" }}>
           <div style={{ textAlign: "center", maxWidth: 720, margin: "0 auto 46px" }}>
-            <Reveal
-              className="mono"
-              style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 15px", background: "#FBF8F2", borderRadius: 5, boxShadow: "0 2px 10px rgba(21,20,15,.06)", fontSize: 10, letterSpacing: ".16em", color: "#8C7A5E", marginBottom: 26 }}
-            >
+            <Reveal className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 15px", background: "#FBF8F2", borderRadius: 5, boxShadow: "0 2px 10px rgba(21,20,15,.06)", fontSize: 10, letterSpacing: ".16em", color: "#8C7A5E", marginBottom: 26 }}>
               <span style={{ width: 5, height: 5, background: "#E4622F", borderRadius: "50%" }} />CUT-OFF CLOCK · FREE, NO ACCOUNT
             </Reveal>
-            <Reveal as="h2" delay={0.06} style={{ margin: 0, fontSize: 56, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>
-              Where do your margins sit?
-            </Reveal>
-            <Reveal as="p" delay={0.12} style={{ margin: "20px auto 0", maxWidth: 420, fontSize: 16.5, lineHeight: 1.5, color: "#6B6455" }}>
-              Set your target finish. Every barrier on this course recalculates against it.
-            </Reveal>
+            <Reveal as="h2" delay={0.06} style={{ margin: 0, fontSize: 56, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>Where do your margins sit?</Reveal>
+            <Reveal as="p" delay={0.12} style={{ margin: "20px auto 0", maxWidth: 420, fontSize: 16.5, lineHeight: 1.5, color: "#6B6455" }}>Set your target finish. Every barrier on this course recalculates against it.</Reveal>
           </div>
 
           <Reveal style={{ background: "rgba(255,255,255,.34)", borderRadius: 16, padding: 26, backdropFilter: "blur(24px) saturate(140%)", boxShadow: "0 50px 100px -50px rgba(21,20,15,.4)" }}>
@@ -476,62 +492,73 @@ export default function CourseReconPage() {
               <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 40 }}>
                 <div>
                   <div className="mono" style={{ fontSize: 10, letterSpacing: ".18em", color: "#A39B8A" }}>TARGET FINISH</div>
-                  <div className="mono" style={{ fontSize: 46, fontWeight: 500, letterSpacing: "-.04em", lineHeight: 1, marginTop: 9 }}>{fmtClock(goal)}:00</div>
+                  <div className="mono" style={{ fontSize: 46, fontWeight: 500, letterSpacing: "-.04em", lineHeight: 1, marginTop: 9 }}>{formatClock(goal)}:00</div>
                 </div>
-                <div style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "8px 15px", borderRadius: 5, background: verdictBg }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: verdictColor }} />
-                  <span className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: verdictColor }}>{verdictLabel}</span>
-                </div>
-              </div>
-
-              <input type="range" min={540} max={1020} step={5} value={goal} onChange={(e) => setGoal(+e.target.value)} style={{ width: "100%", margin: "26px 0 8px", height: 20 }} />
-              <div className="mono" style={{ position: "relative", height: 16, fontSize: 9.5, letterSpacing: ".1em", color: "#A39B8A" }}>
-                <span style={{ position: "absolute", left: 0 }}>09:00</span>
-                <span style={{ position: "absolute", left: "25%", transform: "translateX(-50%)" }}>11:00</span>
-                <span style={{ position: "absolute", left: "50%", transform: "translateX(-50%)" }}>13:00</span>
-                <span style={{ position: "absolute", left: "87.5%", transform: "translateX(-50%)", color: "#C0432E" }}>16:00</span>
-                <span style={{ position: "absolute", right: 0 }}>17:00</span>
-              </div>
-              <div style={{ position: "relative", height: 14, marginTop: 2 }}>
-                <span style={{ position: "absolute", left: "87.5%", top: -18, width: 1, height: 9, background: "rgba(192,67,46,.5)" }} />
-                <span className="mono" style={{ position: "absolute", left: "87.5%", top: 0, transform: "translateX(-50%)", whiteSpace: "nowrap", fontSize: 9, letterSpacing: ".12em", color: "#C0432E" }}>
-                  FINISH CUT-OFF
-                </span>
-              </div>
-
-              <div style={{ position: "relative", marginTop: 40, height: 128 }}>
-                <div style={{ position: "absolute", left: 0, right: 0, top: 60, height: 3, borderRadius: 2, background: "#F1EDE4" }} />
-                <div style={{ position: "absolute", left: 0, top: 60, height: 3, borderRadius: 2, background: "#E4622F", width: progressW, transition: "width .35s cubic-bezier(.16,1,.3,1)" }} />
-                {clock.map((c) => (
-                  <div key={c.name} style={{ position: "absolute", top: 0, left: c.left, transform: "translateX(-50%)", width: 150, textAlign: "center" }}>
-                    <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".13em", color: "#A39B8A" }}>{c.name}</div>
-                    <div className="mono" style={{ fontSize: 17, marginTop: 6 }}>{c.eta}</div>
-                    <div style={{ margin: "13px auto 0", width: 13, height: 13, borderRadius: "50%", background: c.color, border: "3px solid #fff", boxShadow: `0 0 0 2px ${c.color}` }} />
-                    <div className="mono" style={{ fontSize: 12.5, color: c.color, marginTop: 13 }}>{c.margin}</div>
-                    <div className="mono" style={{ fontSize: 9, letterSpacing: ".1em", color: "#A39B8A", marginTop: 4 }}>LIMIT {c.limit}</div>
+                {cutoffRows.length > 0 && (
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "8px 15px", borderRadius: 5, background: verdictBg }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: verdictColor }} />
+                    <span className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: verdictColor }}>{verdictLabel}</span>
                   </div>
-                ))}
+                )}
+              </div>
+
+              <input
+                type="range" min={sliderMin} max={sliderMax} step={5} value={goal}
+                onChange={(e) => setGoal(+e.target.value)}
+                aria-label="Target finish time in minutes"
+                style={{ width: "100%", margin: "26px 0 8px", height: 20 }}
+              />
+              <div className="mono" style={{ display: "flex", justifyContent: "space-between", height: 16, fontSize: 9.5, letterSpacing: ".1em", color: "#A39B8A" }}>
+                <span>{formatClock(sliderMin)}</span>
+                <span style={{ color: "#C0432E" }}>{formatClock(finishLimit)} FINISH CUT-OFF</span>
+                <span>{formatClock(sliderMax)}</span>
+              </div>
+
+              <div style={{ marginTop: 34 }}>
+                {cutoff.isPending && !cutoffRows.length ? (
+                  <div style={{ display: "flex", gap: 40, justifyContent: "space-around", padding: "20px 0" }}>
+                    {[0, 1, 2, 3].map((i) => (
+                      <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                        <Skeleton width={92} height={9} /><Skeleton width="5ch" height={17} /><Skeleton width="6ch" height={12} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(cutoffRows.length, 1)},1fr)`, gap: 16 }}>
+                    {cutoffRows.map((r) => {
+                      const color = r.margin_minutes < 0 ? "#C0432E" : r.at_risk ? "#A9761A" : "#2E7D53";
+                      return (
+                        <div key={r.name} style={{ textAlign: "center" }}>
+                          <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".13em", color: "#A39B8A" }}>{formatBarrierName(r.name).toUpperCase()}</div>
+                          <div className="mono" style={{ fontSize: 17, marginTop: 6 }}>{formatClock(r.estimated_eta_minutes)}</div>
+                          <div style={{ margin: "13px auto 0", width: 13, height: 13, borderRadius: "50%", background: color, border: "3px solid #fff", boxShadow: `0 0 0 2px ${color}` }} />
+                          <div className="mono" style={{ fontSize: 12.5, color, marginTop: 13 }}>{formatMargin(r.margin_minutes)}</div>
+                          <div className="mono" style={{ fontSize: 9, letterSpacing: ".1em", color: "#A39B8A", marginTop: 4 }}>LIMIT {formatClock(r.limit_minutes)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.25fr) minmax(0,1fr)", gap: 10, marginTop: 10 }}>
-              <div style={{ borderRadius: 9, padding: "24px 26px", background: verdictBg }}>
-                <p style={{ margin: 0, fontSize: 23, lineHeight: 1.26, fontWeight: 500, letterSpacing: "-.03em", color: "#15140F" }}>{verdictHead}</p>
-                <p style={{ margin: "14px 0 0", fontSize: 14.5, lineHeight: 1.55, color: "#6B6455" }}>{verdictSub}</p>
+            {/*
+              The verdict, and only the verdict.
+              The prototype also showed a "splits this implies" panel built from
+              invented ratios — 9.3% swim, an 8-minute T1. Nothing serves those,
+              and T1/T2 are not serialised at all, so the panel is gone rather
+              than filled with plausible arithmetic.
+            */}
+            {tightest && (
+              <div style={{ borderRadius: 9, padding: "24px 26px", marginTop: 10, background: verdictBg }}>
+                <p style={{ margin: 0, fontSize: 23, lineHeight: 1.26, fontWeight: 500, letterSpacing: "-.03em", color: "#15140F" }}>
+                  {failing
+                    ? `This misses the ${formatBarrierName(failing.name).toLowerCase()} by ${formatClock(Math.abs(failing.margin_minutes))}.`
+                    : `You clear the ${formatBarrierName(tightest.name).toLowerCase()} with ${formatClock(tightest.margin_minutes)} to spare.`}
+                </p>
+                <p style={{ margin: "14px 0 0", fontSize: 14.5, lineHeight: 1.55, color: "#6B6455" }}>{tightest.basis}</p>
               </div>
-              <div style={{ background: "#fff", borderRadius: 9, padding: "22px 24px", boxShadow: "0 1px 2px rgba(21,20,15,.05)" }}>
-                <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".18em", color: "#A39B8A" }}>SPLITS THIS IMPLIES</div>
-                {splits.map((s) => (
-                  <div key={s.name} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "11px 0", borderBottom: "1px solid #F1EDE4" }}>
-                    <span style={{ fontSize: 14.5, color: "#3D3A31" }}>{s.name}</span>
-                    <span style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
-                      <span className="mono" style={{ fontSize: 11, color: "#A39B8A" }}>{s.target}</span>
-                      <span className="mono" style={{ fontSize: 15, minWidth: 54, textAlign: "right" }}>{s.time}</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            )}
           </Reveal>
         </div>
       </section>
@@ -542,83 +569,52 @@ export default function CourseReconPage() {
           <div>
             <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.032em" }}>That is the course. Now put yourself on it.</div>
             <p style={{ margin: "10px 0 0", maxWidth: 620, fontSize: 15.5, lineHeight: 1.55, color: "#5C574B" }}>
-              Pacing targets, an aid-station timeline, five packed bags, a card you can print. Six minutes, $19.
+              Pacing targets, an aid-station timeline, five packed bags, a card you can print.{priceLabel ? ` ${priceLabel} for this race.` : ""}
             </p>
           </div>
-          <Link
-            href={routes.dashboard}
-            className="btn-accent"
-            style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 52, padding: "0 30px", background: "#E4622F", color: "#fff", borderRadius: 6, fontSize: 15, fontWeight: 600, flex: "none" }}
-          >
+          <Link href={`${routes.planBuilder}?course=${encodeURIComponent(course.slug)}`} className="btn-accent" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 52, padding: "0 30px", background: "#E4622F", color: "#fff", borderRadius: 6, fontSize: 15, fontWeight: 600, flex: "none" }}>
             Build my race plan
           </Link>
         </div>
       </section>
 
-      {/* ---------------- Conditions ---------------- */}
-      <section id="conditions" style={{ maxWidth: 1360, margin: "0 auto", padding: "96px 56px 0" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 64, borderTop: "1px solid rgba(21,20,15,.14)", paddingTop: 26 }}>
-          <div>
-            <Reveal as="h2" style={{ margin: 0, fontSize: 44, lineHeight: 1.02, fontWeight: 700, letterSpacing: "-.045em" }}>
-              What race day is usually like.
-            </Reveal>
-            <p style={{ margin: "20px 0 0", maxWidth: 440, fontSize: 16, lineHeight: 1.55, color: "#5C574B" }}>
-              Eleven editions of history. Your plan is solved against this until the forecast is close enough to replace it.
-            </p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 1, background: "rgba(21,20,15,.14)", marginTop: 34, border: "1px solid rgba(21,20,15,.14)" }}>
-              {[
-                { l: "MEDIAN AIR, 14:00", v: "29°C" },
-                { l: "WATER, START", v: "22.4°C" },
-                { l: "WIND, VALLEY", v: "18", u: "km/h" },
-                { l: "WETSUIT LIKELIHOOD", v: "18%" },
-              ].map((s) => (
-                <div key={s.l} style={{ background: "#F1EEE8", padding: "20px 22px" }}>
-                  <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: "#8C8578" }}>{s.l}</div>
-                  <div className="mono" style={{ fontSize: 30, marginTop: 10 }}>
-                    {s.v}
-                    {s.u && <span style={{ fontSize: 14, color: "#8C8578" }}> {s.u}</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: 22, padding: "16px 20px", borderLeft: "2px solid #E4622F", background: "rgba(228,98,47,.06)", fontSize: 14.5, lineHeight: 1.55, color: "#5C574B" }}>
-              Water has been above the 24.5°C wetsuit limit in nine of eleven editions. Plan for a non-wetsuit swim and treat the wetsuit as the exception.
-            </div>
-          </div>
-          <div>
-            <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: "#8C8578" }}>FINISH TIME DISTRIBUTION · 2015–2025</div>
-            <svg viewBox="0 0 480 240" style={{ display: "block", width: "100%", marginTop: 20 }}>
-              {hist.map((b, k) => (
-                <rect key={k} x={b.x} y={b.y} width={24} height={b.h} fill={b.fill} />
-              ))}
-              <line x1={0} y1={200} x2={480} y2={200} stroke="rgba(21,20,15,.25)" strokeWidth={1} />
-              <line x1={youX} y1={8} x2={youX} y2={200} stroke="#E4622F" strokeWidth={1.6} strokeDasharray="4 3" />
-            </svg>
-            <div className="mono" style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#8C8578", marginTop: 8 }}>
-              <span>09:00</span><span>11:00</span><span>13:00</span><span>15:00</span><span>17:00</span>
-            </div>
-            <div style={{ marginTop: 18, display: "flex", gap: 28 }}>
-              <div>
-                <div className="mono" style={{ fontSize: 10, letterSpacing: ".13em", color: "#8C8578" }}>MEDIAN FINISH</div>
-                <div className="mono" style={{ fontSize: 22, marginTop: 6 }}>12:48</div>
-              </div>
-              <div>
-                <div className="mono" style={{ fontSize: 10, letterSpacing: ".13em", color: "#8C8578" }}>DNF RATE</div>
-                <div className="mono" style={{ fontSize: 22, marginTop: 6 }}>9.4%</div>
-              </div>
-              <div>
-                <div className="mono" style={{ fontSize: 10, letterSpacing: ".13em", color: "#8C8578" }}>MISSED BIKE CUT-OFF</div>
-                <div className="mono" style={{ fontSize: 22, marginTop: 6 }}>3.1%</div>
-              </div>
-            </div>
-            <div style={{ marginTop: 22, fontSize: 14, lineHeight: 1.55, color: "#5C574B" }}>Your target sits at the marker. Roughly {percentile} of finishers came in ahead of it.</div>
-          </div>
-        </div>
-      </section>
-
       <div style={{ marginTop: 104 }}>
-        <Footer extra=" · COURSE BUNDLE v2026.2" />
+        <Footer extra={` · COURSE BUNDLE ${bundle.version}`} />
       </div>
     </div>
+  );
+}
+
+/** Matched to the real page's shape so nothing jumps when the course lands. */
+function ReconSkeleton() {
+  return (
+    <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320 }}>
+      <AppHeader active="courseRecon" ctaLabel="Build your plan" ctaHref="#convert" />
+      <section style={{ position: "relative", height: "66vh", minHeight: 520, background: "#1C1916" }}>
+        <div style={{ position: "absolute", left: 56, bottom: 44, display: "flex", flexDirection: "column", gap: 20 }}>
+          <Skeleton width={220} height={10} />
+          <Skeleton width={620} height={82} />
+          <Skeleton width={380} height={16} />
+        </div>
+      </section>
+      <section style={{ maxWidth: 1360, margin: "34px auto 0", padding: "0 56px" }}>
+        <Skeleton width="100%" height={460} radius={9} />
+      </section>
+      <section style={{ maxWidth: 1360, margin: "64px auto 0", padding: "0 56px", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 20 }}>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Skeleton width={70} height={10} /><Skeleton width="7ch" height={38} /><Skeleton width={170} height={14} />
+          </div>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+export default function CourseReconPage() {
+  return (
+    <Suspense fallback={<ReconSkeleton />}>
+      <ReconContent />
+    </Suspense>
   );
 }

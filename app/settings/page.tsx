@@ -5,12 +5,13 @@ import Link from "next/link";
 import { Mark } from "@/components/Mark";
 import { MediaPlaceholder } from "@/components/MediaPlaceholder";
 import { routes } from "@/lib/routes";
+import { GuardedPage } from "@/lib/auth/GuardedPage";
 import {
   BILLING_STATS, CONF_FG, CONNECTIONS, CONSTRAINTS, INVOICES, NOTIFS, PROFILE_FIELDS,
   SENSITIVITY, SRC_STYLE, TABS, type ConnectionKey, type Tab,
 } from "@/lib/settings";
 
-export default function SettingsPage() {
+function SettingsPage() {
   const [tab, setTab] = useState<Tab>("profile");
   const [saved, setSaved] = useState(true);
   const [unit, setUnit] = useState("Metric");
@@ -340,5 +341,14 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+export default function GuardedSettingsPage() {
+  return (
+    <GuardedPage>
+      <SettingsPage />
+    </GuardedPage>
   );
 }
