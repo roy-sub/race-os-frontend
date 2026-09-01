@@ -72,6 +72,18 @@ export default function LandingPage() {
   const recon = useRecon(featuredSlug);
   const featured = recon.data ?? null;
 
+  /**
+   * Whether the canvas can ever draw, and why not when it cannot.
+   *
+   * `useRecon` is disabled until the directory names a course, and a disabled
+   * query reports `isPending: true` indefinitely — so "LOADING COURSE" was a
+   * label with no end condition whenever `GET /courses` failed. These three
+   * states are mutually exclusive and each one says something true.
+   */
+  const canvasError = courses.error ?? recon.error;
+  const canvasLoading = !canvasError && !featured && (courses.isPending || recon.isPending);
+  const canvasEmpty = !canvasError && !canvasLoading && !featured;
+
   const canvasLegs = useMemo(() => (featured ? sortLegs(featured.legs) : []), [featured]);
   const canvasProjection = useMemo(
     () => (canvasLegs.length ? projectLegs(canvasLegs, { width: 1200, height: 286 }, 20) : null),
@@ -263,7 +275,10 @@ export default function LandingPage() {
             </div>
             <div style={{ display: "flex", gap: 52, paddingBottom: 8 }}>
               {[
-                { value: courses.data?.meta.total, dec: 0, suffix: "", label: "COURSES", delay: 0.34 },
+                // Omitted entirely when the count cannot be read: a dash where a
+                // number belongs looks like a broken page, and the honest options
+                // are the real figure or no figure.
+                ...(canvasError ? [] : [{ value: courses.data?.meta.total, dec: 0, suffix: "", label: "COURSES", delay: 0.34 }]),
                 { value: 5, dec: 0, suffix: "", label: "BAGS PACKED", delay: 0.46 },
               ].map((stat) => (
                 <Reveal key={stat.label} delay={stat.delay}>
@@ -299,7 +314,13 @@ export default function LandingPage() {
         <Reveal style={{ background: "#15140F", borderRadius: 9, padding: 18 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, padding: "0 4px" }}>
             <div className="mono" style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 10, letterSpacing: ".16em", color: "rgba(255,255,255,.42)" }}>
-              <span style={{ width: 5, height: 5, background: "#E4622F", borderRadius: "50%" }} />{featured ? `${featured.course.name.toUpperCase()} · ${featured.course.place.toUpperCase()}` : "LOADING COURSE"}
+              <span style={{ width: 5, height: 5, background: canvasError ? "#C0392B" : "#E4622F", borderRadius: "50%" }} />{featured
+                ? `${featured.course.name.toUpperCase()} · ${featured.course.place.toUpperCase()}`
+                : canvasError
+                  ? "COURSE UNAVAILABLE"
+                  : canvasEmpty
+                    ? "NO COURSES YET"
+                    : "LOADING COURSE"}
             </div>
             <div style={{ display: "flex", gap: 3, padding: 3, background: "rgba(255,255,255,.06)", borderRadius: 5 }}>
               <span className="mono" style={{ padding: "5px 12px", borderRadius: 3, background: "#E4622F", color: "#fff", fontSize: 9.5, letterSpacing: ".12em" }}>2D</span>
@@ -343,6 +364,27 @@ export default function LandingPage() {
               {canvasChart && <path d={canvasChart.line} fill="none" stroke="#E4622F" strokeWidth={1.7} strokeLinejoin="round" />}
               {hoverOn && canvasChart && <line x1={X(hi).toFixed(1)} y1={298} x2={X(hi).toFixed(1)} y2={400} stroke="rgba(255,255,255,.4)" strokeWidth={1} />}
             </svg>
+            {(canvasError || canvasEmpty) && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
+                <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".16em", color: canvasError ? "#E86A5A" : "rgba(255,255,255,.4)" }}>
+                  {canvasError ? "COURSE DATA UNAVAILABLE" : "NO COURSES YET"}
+                </div>
+                <div style={{ maxWidth: 420, fontSize: 15, lineHeight: 1.55, color: "rgba(251,248,242,.6)" }}>
+                  {canvasError
+                    ? "We could not reach the course library, so there is nothing real to draw here. The rest of the page still works."
+                    : "The course library is empty right now."}
+                </div>
+                {canvasError && (
+                  <button
+                    type="button"
+                    onClick={() => { void courses.refetch(); void recon.refetch(); }}
+                    style={{ marginTop: 4, height: 40, padding: "0 18px", background: "transparent", border: "1px solid rgba(251,248,242,.28)", borderRadius: 6, color: "#FBF8F2", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+                  >
+                    Try again
+                  </button>
+                )}
+              </div>
+            )}
             <div className="mono" style={{ position: "absolute", left: 18, bottom: 14, fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.34)" }}>
               {canvasBikeLeg && canvasProfile
                 ? `${canvasBikeLeg.leg} · ${formatKm(canvasBikeLeg.distance_m)} KM · ${formatMetres(canvasProfile.gain_m)} M GAIN`

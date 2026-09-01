@@ -13,7 +13,32 @@ function required(name: string, value: string | undefined): string {
         `The app cannot start without it — there is no default and no fallback origin.`,
     );
   }
-  return value.trim().replace(/\/+$/, "");
+  return upgradeToPageProtocol(name, value.trim().replace(/\/+$/, ""));
+}
+
+/**
+ * An `http://` API on an `https://` page cannot work, so upgrade it.
+ *
+ * The browser blocks that request as mixed content *before it leaves*, which
+ * reaches the app as a failed fetch and reads on screen as "the request never
+ * reached RaceOS" — indistinguishable from the backend being down. Since the
+ * plain-http call had no chance of succeeding, rewriting it to https is the
+ * only outcome that can work, and the warning says plainly what to correct.
+ *
+ * Guarded on `window` because this module is also evaluated during the static
+ * build, where there is no page protocol to compare against.
+ */
+function upgradeToPageProtocol(name: string, url: string): string {
+  if (typeof window === "undefined") return url;
+  if (window.location.protocol !== "https:" || !url.startsWith("http://")) return url;
+
+  const upgraded = `https://${url.slice("http://".length)}`;
+  console.warn(
+    `[RaceOS] ${name} is set to ${url}, but this page is served over https. ` +
+      `A browser blocks that call as mixed content, so it has been upgraded to ` +
+      `${upgraded}. Fix the value at build time to remove this warning.`,
+  );
+  return upgraded;
 }
 
 /** Backend origin, e.g. https://race-os-backend.onrender.com — no trailing slash, no /api/v1. */

@@ -22,14 +22,26 @@ function makeQueryClient() {
         // refetch storms and short enough that a drift check is not stale.
         staleTime: 60_000,
         retry(failureCount, error) {
-          // A 4xx is an answer, not a hiccup. Retrying a 402 or a 422 just
-          // delays the paywall or the validation message the user needs to see.
           if (error instanceof ApiError) {
+            // A 4xx is an answer, not a hiccup. Retrying a 402 or a 422 just
+            // delays the paywall or the validation message the user needs.
             if (error.status >= 400 && error.status < 500) return false;
+
+            // Status 0 means the request never reached the API. On a host that
+            // sleeps when idle — Render's free tier among them — the first
+            // visitor after a quiet spell pays for the wake-up, which takes
+            // tens of seconds. Giving up after a couple of seconds turns a slow
+            // start into "the service is down" for the one person most likely
+            // to be evaluating it, so this leans on patience instead.
+            if (error.status === 0) return failureCount < 5;
+
             return failureCount < 2;
           }
           return failureCount < 2;
         },
+        // Roughly 1s, 2s, 4s, 8s, 10s — about 25 seconds of patience for a
+        // waking host, and still capped so nothing hangs indefinitely.
+        retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
         refetchOnWindowFocus: false,
       },
       mutations: {

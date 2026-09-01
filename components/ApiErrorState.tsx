@@ -13,6 +13,7 @@
  * is a fault, but the plan builder should never take that path.
  */
 
+import { API_BASE_URL } from "@/lib/env";
 import { ApiError } from "@/lib/api/errors";
 import { errorCopy } from "@/lib/errorCopy";
 
@@ -70,6 +71,25 @@ export function ApiErrorState({
       <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: "rgba(21,20,15,.66)" }}>
         {copy.body}
       </p>
+
+      {/*
+        A status of 0 means the request never reached the API at all — a blocked
+        CORS preflight, a wrong origin, a sleeping host. There is no request id
+        for it because no server ever saw it, so name the address that was tried
+        instead: it is the one piece of information that separates "the backend
+        is down" from "the backend is somewhere else".
+      */}
+      {apiError && apiError.status === 0 ? (
+        <p
+          style={{
+            margin: "12px 0 0",
+            font: "400 11px/1.4 var(--mono, ui-monospace)",
+            color: "rgba(21,20,15,.45)",
+          }}
+        >
+          TRIED · <span style={{ userSelect: "all" }}>{API_BASE_URL}</span>
+        </p>
+      ) : null}
 
       {apiError?.requestId ? (
         <p

@@ -67,14 +67,51 @@ function ReconContent() {
   const { data: recon, isPending, error, refetch } = useRecon(courseRef);
   const prices = usePrices();
 
-  if (error) {
+  /**
+   * With no `?course=` this page depends on the directory to pick one, so the
+   * directory's failure is this page's failure — and it has to be *said*.
+   *
+   * A query with no ref is disabled, and a disabled query reports
+   * `isPending: true` with no error for as long as it stays that way. Rendering
+   * the skeleton on `isPending` alone therefore left this page loading forever
+   * whenever `GET /courses` failed: a spinner that can never resolve, with the
+   * real error one component away and never shown.
+   */
+  const failure = error ?? (courseRef === null ? courses.error : null);
+
+  if (failure) {
     return (
       <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320 }}>
         <AppHeader active="courseRecon" ctaLabel="Build your plan" ctaHref={routes.planBuilder} />
         <div style={{ maxWidth: 720, margin: "80px auto", padding: "0 56px" }}>
-          <ApiErrorState error={error} onRetry={() => void refetch()} />
+          <ApiErrorState
+            error={failure}
+            onRetry={() => void (error ? refetch() : courses.refetch())}
+          />
           <Link href={routes.races} className="mono link-accent" style={{ display: "inline-block", marginTop: 24, fontSize: 11, letterSpacing: ".14em", color: "#C6461B" }}>
             ← BACK TO THE DIRECTORY
+          </Link>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  // The directory answered, and it is empty. Not an error, and not a wait.
+  if (courseRef === null && !courses.isPending) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320 }}>
+        <AppHeader active="courseRecon" ctaLabel="Build your plan" ctaHref={routes.planBuilder} />
+        <div style={{ maxWidth: 720, margin: "80px auto", padding: "0 56px", textAlign: "center" }}>
+          <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>NO COURSE SELECTED</div>
+          <h1 style={{ margin: "18px 0 0", fontSize: 34, lineHeight: 1.14, fontWeight: 500, letterSpacing: "-.032em" }}>
+            Pick a course to explore.
+          </h1>
+          <p style={{ margin: "12px 0 0", fontSize: 15.5, lineHeight: 1.55, color: "#6B6455" }}>
+            Recon is free and needs no account — choose one from the directory.
+          </p>
+          <Link href={routes.races} className="btn-accent" style={{ display: "inline-flex", alignItems: "center", height: 48, padding: "0 24px", marginTop: 26, background: "#E4622F", color: "#fff", borderRadius: 7, fontSize: 15, fontWeight: 600 }}>
+            Browse the directory
           </Link>
         </div>
         <Footer />
