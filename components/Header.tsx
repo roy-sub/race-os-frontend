@@ -5,8 +5,11 @@ import { useEffect, useState } from "react";
 import { Mark } from "./Mark";
 import { routes } from "@/lib/routes";
 
+// Kept in step with AppHeader's nav: the home page and every other page must
+// offer the same destinations, or a link appears to come and go as you browse.
 const NAV = [
   { href: routes.races, label: "Races" },
+  { href: routes.courseRecon, label: "Course recon" },
   { href: routes.howItWorks, label: "How it works" },
   { href: routes.pricing, label: "Pricing" },
   { href: routes.dashboard, label: "Dashboard" },

@@ -10,6 +10,7 @@ import { MediaPlaceholder } from "@/components/MediaPlaceholder";
 import { routes } from "@/lib/routes";
 import { BAGS, FAQS, fmtClock } from "@/lib/landing";
 import { useCourses, useRecon } from "@/lib/api/courses";
+import { HERO_STATS } from "@/lib/marketing";
 import { elevationPath, formatKm, formatMetres, projectLegs, sortLegs } from "@/lib/courseGeo";
 import { OsmAttribution } from "@/components/OsmAttribution";
 
@@ -274,18 +275,15 @@ export default function LandingPage() {
               </Reveal>
             </div>
             <div style={{ display: "flex", gap: 52, paddingBottom: 8 }}>
-              {[
-                // Omitted entirely when the count cannot be read: a dash where a
-                // number belongs looks like a broken page, and the honest options
-                // are the real figure or no figure.
-                ...(canvasError ? [] : [{ value: courses.data?.meta.total, dec: 0, suffix: "", label: "COURSES", delay: 0.34 }]),
-                { value: 5, dec: 0, suffix: "", label: "BAGS PACKED", delay: 0.46 },
-              ].map((stat) => (
-                <Reveal key={stat.label} delay={stat.delay}>
+              {/*
+                Fixed marketing figures from lib/marketing.ts — deliberately not
+                read from the API. They always render, so the banner never shows
+                a dash or drops a column while the backend is waking up.
+              */}
+              {HERO_STATS.map((stat, i) => (
+                <Reveal key={stat.label} delay={0.34 + i * 0.06}>
                   <div className="mono" style={{ fontSize: 32, fontWeight: 500, letterSpacing: "-.035em", color: "#FBF8F2" }}>
-                    {stat.value === undefined
-                      ? <span style={{ opacity: .35 }}>—</span>
-                      : <CountUp value={stat.value} decimals={stat.dec} suffix={stat.suffix} />}
+                    <CountUp value={stat.value} decimals={stat.decimals} suffix={stat.suffix} />
                   </div>
                   <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".16em", color: "rgba(255,255,255,.45)", marginTop: 8 }}>
                     {stat.label}
