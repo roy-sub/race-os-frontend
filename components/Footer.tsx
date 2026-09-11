@@ -40,10 +40,16 @@ function useCourseLinks(): { href: string; label: string }[] {
   return [...links, { href: routes.races, label: "Race directory" }];
 }
 
+/*
+ * Only destinations that exist.
+ *
+ * "Race reports" pointed at `#` — a link on every page of the site to a page
+ * that has never been built. A dead link in a footer is a small thing that
+ * tells a visitor a large one: that nobody has walked the site recently.
+ */
 const athleteLinks = [
   { href: routes.guide, label: "First iron distance" },
   { href: routes.coach, label: "Coaches" },
-  { href: "#", label: "Race reports" },
   { href: routes.howItWorks, label: "Method" },
 ];
 
@@ -99,10 +105,11 @@ export function Footer({ extra = "" }: FooterProps) {
           <FooterCol title="Courses" links={courseLinks} />
           <FooterCol title="Athletes" links={athleteLinks} />
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* About, Changelog and Status all pointed at `#`. They come back
+                when the pages behind them do. */}
             <div style={{ fontSize: 14, color: "#A39B8A", fontWeight: 500 }}>Company</div>
-            <Link href="#" style={{ fontSize: 15.5, fontWeight: 500 }}>About</Link>
-            <Link href="#" style={{ fontSize: 15.5, fontWeight: 500 }}>Changelog</Link>
-            <Link href="#" style={{ fontSize: 15.5, fontWeight: 500 }}>Status</Link>
+            <Link href={routes.howItWorks} style={{ fontSize: 15.5, fontWeight: 500 }}>How it works</Link>
+            <Link href={routes.pricing} style={{ fontSize: 15.5, fontWeight: 500 }}>Pricing</Link>
             <div style={{ fontSize: 14, color: "#A39B8A", fontWeight: 500, marginTop: 12 }}>Talk to a human</div>
             <Link href="mailto:hello@raceos.cc" style={{ fontSize: 15.5, fontWeight: 500 }}>hello@raceos.cc</Link>
           </div>
@@ -160,10 +167,12 @@ export function Footer({ extra = "" }: FooterProps) {
           <div style={{ textAlign: "right" }}>
             <div className="mono" style={{ fontSize: 11, letterSpacing: ".12em", color: "#A39B8A" }}>RACEOS © 2026{extra}</div>
             <div style={{ display: "flex", gap: 18, marginTop: 12, fontSize: 14, fontWeight: 500 }}>
-              <Link href="#">Terms</Link>
-              <Link href="#">Privacy</Link>
+              {/* Terms and Privacy are real obligations with no pages yet, so
+                  they are not linked to nothing — the address below is the one
+                  route to a human that actually works. */}
               <Link href={routes.howItWorks}>Method</Link>
-              <Link href="#">Contact</Link>
+              <Link href={routes.races}>Races</Link>
+              <a href="mailto:hello@raceos.cc">Contact</a>
             </div>
           </div>
         </div>

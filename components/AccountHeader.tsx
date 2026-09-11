@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Mark } from "./Mark";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { routes } from "@/lib/routes";
@@ -31,6 +31,15 @@ type AccountHeaderProps = {
    * it had not.
    */
   roleLabel?: string;
+  /**
+   * A page-specific control, rendered before the search box.
+   *
+   * Settings uses it for its save indicator. It exists so that a page needing
+   * one extra affordance can have it without forking the whole header — which
+   * is what Settings did before, ending up with a different nav, no
+   * notifications bell, and no way to sign out at all.
+   */
+  aside?: ReactNode;
 };
 
 /** `users.tier` as a person would read it. */
@@ -48,7 +57,7 @@ const TIER_LABEL: Record<string, string> = {
  * The name is whoever is actually signed in, from `GET /auth/me` by way of the
  * auth context — not a prop, so no page can pass the wrong one.
  */
-export function AccountHeader({ active, alerts = [], roleLabel }: AccountHeaderProps) {
+export function AccountHeader({ active, alerts = [], roleLabel, aside }: AccountHeaderProps) {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { user, status, signOut } = useAuth();
@@ -77,6 +86,7 @@ export function AccountHeader({ active, alerts = [], roleLabel }: AccountHeaderP
           ))}
         </nav>
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          {aside}
           <div style={{ display: "flex", alignItems: "center", gap: 9, height: 34, padding: "0 12px", border: "1px solid rgba(21,20,15,.14)", borderRadius: 6, width: 196, background: "rgba(255,255,255,.5)" }}>
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flex: "none" }}>
               <circle cx="7" cy="7" r="4.6" stroke="#8C8578" strokeWidth="1.5" />

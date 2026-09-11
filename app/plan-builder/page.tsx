@@ -263,6 +263,10 @@ function BuilderScreen() {
   const comingSoonCount = (courses.data?.data ?? []).filter(
     (c) => c.availability !== "available",
   ).length;
+  /** How many rows the picker will actually offer, before the search filter. */
+  const pickable = (courses.data?.data ?? []).filter(
+    (c) => c.availability === "available",
+  ).length;
 
   // --- the right-hand panel -------------------------------------------------
   const panelSplits = solved?.splits ?? [];
@@ -335,7 +339,11 @@ function BuilderScreen() {
                       type="text"
                       value={courseQuery}
                       onChange={(e) => setCourseQuery(e.target.value)}
-                      placeholder={courses.data ? `Search ${courses.data.meta.total} ${courses.data.meta.total === 1 ? "course" : "courses"}` : "Loading courses…"}
+                      /* The count is of what the list will actually offer, not
+                         of the whole directory. A box saying "Search 15
+                         courses" above a list with one pickable row in it is
+                         counting the fourteen it is about to refuse. */
+                      placeholder={courses.data ? `Search ${pickable} ${pickable === 1 ? "course" : "courses"}` : "Loading courses…"}
                       style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, outline: "none" }}
                     />
                     {selectedCourse && <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", padding: "3px 7px", borderRadius: 3, background: "rgba(124,192,143,.18)", color: "#3E7B55", whiteSpace: "nowrap" }}>SELECTED</span>}

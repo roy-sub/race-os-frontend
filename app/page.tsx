@@ -10,6 +10,7 @@ import { MediaPlaceholder } from "@/components/MediaPlaceholder";
 import { routes } from "@/lib/routes";
 import { BAGS, FAQS, fmtClock } from "@/lib/landing";
 import { useCourses } from "@/lib/api/courses";
+import { usePrices, priceFor, formatPrice } from "@/lib/api/billing";
 import { HERO_STATS } from "@/lib/marketing";
 import { ShowcaseMap } from "@/components/CourseMap";
 
@@ -54,10 +55,27 @@ function Ticker() {
   );
 }
 
-const STAR =
-  "M10 1l2.6 5.6 6.1.7-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L1.3 7.3l6.1-.7z";
-
 export default function LandingPage() {
+  /*
+   * The teaser's prices came from four hardcoded strings, and they did not
+   * agree with each other: "£0" beside "$19", "$59" and "$99". A pricing row
+   * a visitor cannot read a single currency off is worse than no pricing row,
+   * and these had also drifted from what `GET /prices` actually charges.
+   *
+   * Read from the same endpoint the pricing page uses, so the two can never
+   * disagree again, and fall back to the tier's name rather than to a number
+   * we would be inventing.
+   */
+  const prices = usePrices();
+  const priceLabel = (tier: "per_race" | "season" | "coach") => {
+    const price = priceFor(prices.data, tier);
+    return price ? formatPrice(price.amount_cents, price.currency) : "—";
+  };
+  const freeLabel = (() => {
+    const any = priceFor(prices.data, "per_race");
+    return any ? formatPrice(0, any.currency) : "Free";
+  })();
+
   /* The course count in the hero, from the real calendar. The map itself is
      the showcase venue and needs no fetch — see the Course canvas section. */
   const courses = useCourses();
@@ -573,7 +591,28 @@ export default function LandingPage() {
         </Reveal>
       </section>
 
-      {/* ---------------- Reviews ---------------- */}
+      {/*
+        ---------------- What it actually does ----------------
+
+        This was a "Race reports" section: four named athletes with photographs,
+        finish times and quotes, a 94% success rate, a 2x claim, "1,184 athletes
+        have raced a solved plan", and "4.9 from 412 race reports" under five
+        filled stars.
+
+        None of it was real. There have been no race reports, there is no
+        rating, and Marcus Vidal and Lena Ostergaard are not people — two of
+        them were credited with finishing courses that no longer exist on the
+        site, which is how it was noticed. Invented testimonials are not a
+        placeholder to fill in later; they are a false statement to a visitor
+        deciding whether to trust us with a race they have trained a year for,
+        and in the UK and US they are separately unlawful.
+
+        What replaces it has to do the same job honestly. The strongest true
+        thing about this product is not a rating, it is the specificity of what
+        it produces — so that is what this section says, and every claim in it
+        is a description of the software rather than a report about the world.
+        When there are real race reports, they belong here, with real names.
+      */}
       <section style={{ marginTop: 120, padding: "96px 0 104px", background: "#F6F4EF" }}>
         <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 48px" }}>
           <div style={{ textAlign: "center", maxWidth: 660, margin: "0 auto 48px" }}>
@@ -592,120 +631,75 @@ export default function LandingPage() {
                 marginBottom: 26,
               }}
             >
-              RACE REPORTS
+              WHAT YOU GET
             </Reveal>
             <Reveal as="h2" delay={0.06} style={{ margin: 0, fontSize: 58, lineHeight: 1, fontWeight: 600, letterSpacing: "-.045em" }}>
-              Raced on. Not theorised.
+              Specific enough to race on.
             </Reveal>
-            <Reveal as="p" delay={0.12} style={{ margin: "20px auto 0", maxWidth: 430, fontSize: 16.5, lineHeight: 1.5, color: "#6B6455" }}>
-              What athletes said after they crossed the line with a solved plan.
+            <Reveal as="p" delay={0.12} style={{ margin: "20px auto 0", maxWidth: 470, fontSize: 16.5, lineHeight: 1.5, color: "#6B6455" }}>
+              Not training advice. A plan for one race, on one course, at your
+              numbers — and every figure in it carries where it came from.
             </Reveal>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.28fr)", gap: 14, alignItems: "stretch" }}>
             <Reveal style={{ background: "#fff", borderRadius: 8, padding: "34px 34px 30px", display: "flex", flexDirection: "column", boxShadow: "0 1px 3px rgba(21,20,15,.06)" }}>
-              <div style={{ fontSize: 56, fontWeight: 600, letterSpacing: "-.05em", lineHeight: 1 }}>94%</div>
-              <div style={{ fontSize: 16, color: "#3D3A31", marginTop: 12 }}>of solved plans cleared every cut-off on race day</div>
-              <div className="mono" style={{ fontSize: 18, color: "#E4622F", marginTop: 30 }}>&rdquo;</div>
-              <p style={{ margin: "10px 0 0", fontSize: 17.5, lineHeight: 1.5, color: "#3D3A31" }}>
-                I had a bike split I trusted and nothing that told me whether the run would still clear the last barrier. It told me. To the minute — and it was right to ninety seconds.
-              </p>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: "auto", paddingTop: 34 }}>
-                <MediaPlaceholder path="assets/athletes/marcus.jpg" background="#DED7C9" style={{ width: 42, height: 42, borderRadius: "50%", flex: "none" }} />
-                <div>
-                  <div style={{ fontSize: 14.5, fontWeight: 600, letterSpacing: "-.01em" }}>Marcus Vidal</div>
-                  <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".11em", color: "#8C8578", marginTop: 3 }}>TRAMUNTANA FULL · 09:41:12</div>
-                </div>
+              <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "#8C8578" }}>EVERY BARRIER</div>
+              <div style={{ fontSize: 34, fontWeight: 600, letterSpacing: "-.04em", lineHeight: 1.08, marginTop: 14 }}>
+                Your margin at every cut-off, before you enter.
               </div>
+              <p style={{ margin: "14px 0 0", fontSize: 16, lineHeight: 1.55, color: "#5C574B" }}>
+                Each barrier on the course, the time you are projected to reach
+                it, and how much room that leaves. The cut-off calculator is free
+                and needs no account — it is the first thing worth knowing about
+                a race, so it is not behind anything.
+              </p>
+              <Link href={routes.courseRecon} className="link-accent" style={{ marginTop: "auto", paddingTop: 30, fontSize: 15, fontWeight: 600, color: "#C6461B" }}>
+                Try it on a real course →
+              </Link>
             </Reveal>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <Reveal delay={0.07} style={{ background: "#fff", borderRadius: 8, padding: "30px 32px", boxShadow: "0 1px 3px rgba(21,20,15,.06)" }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
-                  <span style={{ fontSize: 44, fontWeight: 600, letterSpacing: "-.05em", lineHeight: 1 }}>2×</span>
-                  <span style={{ fontSize: 16, color: "#3D3A31" }}>faster race-week preparation</span>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "#8C8578" }}>FIVE BAGS</div>
+                <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-.032em", marginTop: 12 }}>
+                  Packed item by item, each with its reason.
                 </div>
-                <div className="mono" style={{ fontSize: 18, color: "#E4622F", marginTop: 20 }}>&rdquo;</div>
-                <p style={{ margin: "8px 0 0", fontSize: 17, lineHeight: 1.5, color: "#3D3A31" }}>
-                  First iron distance. I did not know my FTP and I still got a plan that told me exactly what went in the red bag and why.
+                <p style={{ margin: "10px 0 0", fontSize: 15.5, lineHeight: 1.55, color: "#5C574B" }}>
+                  A long-course race has five bags and no second chances at them.
+                  Every item says why it is in there, so you can disagree with it
+                  before race morning rather than at the aid station.
                 </p>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 24 }}>
-                  <MediaPlaceholder path="assets/athletes/priya.jpg" background="#DED7C9" style={{ width: 38, height: 38, borderRadius: "50%", flex: "none" }} />
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-.01em" }}>Priya Raman</div>
-                    <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".11em", color: "#8C8578", marginTop: 3 }}>NORTH SHORE FULL · 13:58:40</div>
-                  </div>
-                </div>
               </Reveal>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14, flex: 1 }}>
                 <Reveal delay={0.14} style={{ background: "#fff", borderRadius: 8, padding: "26px 26px 24px", display: "flex", flexDirection: "column", boxShadow: "0 1px 3px rgba(21,20,15,.06)" }}>
-                  <div className="mono" style={{ fontSize: 16, color: "#E4622F" }}>&rdquo;</div>
-                  <p style={{ margin: "8px 0 0", fontSize: 15, lineHeight: 1.5, color: "#3D3A31" }}>
-                    Eleven athletes. On Monday I know which three are in trouble on Sunday.
+                  <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "#8C8578" }}>PROVENANCE</div>
+                  <p style={{ margin: "12px 0 0", fontSize: 15, lineHeight: 1.5, color: "#3D3A31" }}>
+                    Every number says whether you measured it, tested it, typed
+                    it, or we estimated it — and estimates are labelled on the
+                    plan, not buried in a footnote.
                   </p>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: "auto", paddingTop: 22 }}>
-                    <MediaPlaceholder path="assets/athletes/jonas.jpg" background="#DED7C9" style={{ width: 32, height: 32, borderRadius: "50%", flex: "none" }} />
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>Jonas Feldt</div>
-                      <div className="mono" style={{ fontSize: 9, letterSpacing: ".11em", color: "#8C8578", marginTop: 2 }}>COACH · 11 ATHLETES</div>
-                    </div>
-                  </div>
                 </Reveal>
                 <Reveal delay={0.2} style={{ background: "#15140F", borderRadius: 8, padding: "26px 26px 24px", display: "flex", flexDirection: "column" }}>
-                  <div className="mono" style={{ fontSize: 16, color: "#E4622F" }}>&rdquo;</div>
-                  <p style={{ margin: "8px 0 0", fontSize: 15, lineHeight: 1.5, color: "rgba(255,255,255,.82)" }}>
-                    The forecast moved on Thursday. It re-solved and told me what it cost. Six watts.
+                  <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "rgba(251,248,242,.45)" }}>WHEN IT CHANGES</div>
+                  <p style={{ margin: "12px 0 0", fontSize: 15, lineHeight: 1.5, color: "rgba(255,255,255,.82)" }}>
+                    A forecast that moves in race week re-solves the plan and
+                    tells you what it cost. Nothing is recalculated silently.
                   </p>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: "auto", paddingTop: 22 }}>
-                    <MediaPlaceholder path="assets/athletes/lena.jpg" background="#3A352D" style={{ width: 32, height: 32, borderRadius: "50%", flex: "none" }} />
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#FBF8F2" }}>Lena Ostergaard</div>
-                      <div className="mono" style={{ fontSize: 9, letterSpacing: ".11em", color: "rgba(255,255,255,.4)", marginTop: 2 }}>KALMAR 70.3 · 05:12:08</div>
-                    </div>
-                  </div>
                 </Reveal>
               </div>
             </div>
           </div>
 
-          <Reveal style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 40, marginTop: 26, padding: "0 6px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 26 }}>
-              <span style={{ fontSize: 15, color: "#3D3A31" }}>
-                <CountUp value={1184} /> athletes have raced a solved plan
-              </span>
-              <span style={{ width: 1, height: 26, background: "rgba(21,20,15,.12)" }} />
-              <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ display: "flex", gap: 3 }}>
-                  {[0, 1, 2, 3, 4].map((k) => (
-                    <svg key={k} width="14" height="14" viewBox="0 0 20 20" fill="#E4622F">
-                      <path d={STAR} />
-                    </svg>
-                  ))}
-                </span>
-                <span className="mono" style={{ fontSize: 13 }}>4.9</span>
-                <span style={{ fontSize: 13.5, color: "#8C8578" }}>from 412 race reports</span>
-              </span>
-            </div>
-            <a
-              href="#"
-              className="btn-ghost"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                whiteSpace: "nowrap",
-                gap: 9,
-                height: 44,
-                padding: "0 20px",
-                background: "#fff",
-                borderRadius: 6,
-                boxShadow: "0 1px 3px rgba(21,20,15,.08)",
-                fontSize: 14,
-                fontWeight: 600,
-              }}
-            >
-              Read all reports <span className="mono">↗</span>
-            </a>
+          <Reveal style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 26, marginTop: 26, padding: "0 6px" }}>
+            <span style={{ fontSize: 15, color: "#6B6455" }}>
+              Course recon and the cut-off calculator are free. You pay when you
+              want the plan.
+            </span>
+            <Link href={routes.pricing} className="link-accent" style={{ fontSize: 15, fontWeight: 600, color: "#C6461B", whiteSpace: "nowrap" }}>
+              See pricing →
+            </Link>
           </Reveal>
         </div>
       </section>
@@ -724,7 +718,7 @@ export default function LandingPage() {
           <Reveal style={{ border: "1px solid rgba(21,20,15,.13)", borderRadius: 8, padding: "26px 24px 28px" }}>
             <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "#8C8578" }}>FREE</div>
             <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.03em", marginTop: 12 }}>Course Recon</div>
-            <div className="mono" style={{ fontSize: 32, letterSpacing: "-.035em", marginTop: 18 }}>£0</div>
+            <div className="mono" style={{ fontSize: 32, letterSpacing: "-.035em", marginTop: 18 }}>{freeLabel}</div>
             <p style={{ margin: "12px 0 0", fontSize: 14, lineHeight: 1.5, color: "#5C574B" }}>Every course. Every cut-off calculator.</p>
           </Reveal>
           <Reveal delay={0.07} style={{ borderRadius: 8, padding: "26px 24px 28px", background: "#15140F", color: "#FBF8F2", position: "relative" }}>
@@ -733,19 +727,19 @@ export default function LandingPage() {
             </div>
             <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "rgba(255,255,255,.42)" }}>PER RACE</div>
             <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.03em", marginTop: 12 }}>Race Plan</div>
-            <div className="mono" style={{ fontSize: 32, letterSpacing: "-.035em", marginTop: 18 }}>$19</div>
+            <div className="mono" style={{ fontSize: 32, letterSpacing: "-.035em", marginTop: 18 }}>{priceLabel("per_race")}</div>
             <p style={{ margin: "12px 0 0", fontSize: 14, lineHeight: 1.5, color: "rgba(255,255,255,.58)" }}>One solved plan, yours permanently.</p>
           </Reveal>
           <Reveal delay={0.14} style={{ border: "1px solid rgba(21,20,15,.13)", borderRadius: 8, padding: "26px 24px 28px" }}>
             <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "#8C8578" }}>ANNUAL</div>
             <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.03em", marginTop: 12 }}>Season Pass</div>
-            <div className="mono" style={{ fontSize: 32, letterSpacing: "-.035em", marginTop: 18 }}>$59</div>
+            <div className="mono" style={{ fontSize: 32, letterSpacing: "-.035em", marginTop: 18 }}>{priceLabel("season")}</div>
             <p style={{ margin: "12px 0 0", fontSize: 14, lineHeight: 1.5, color: "#5C574B" }}>Unlimited plans. Constraints that calibrate.</p>
           </Reveal>
           <Reveal delay={0.21} style={{ border: "1px solid rgba(21,20,15,.13)", borderRadius: 8, padding: "26px 24px 28px" }}>
             <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "#8C8578" }}>MONTHLY</div>
             <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.03em", marginTop: 12 }}>Coach</div>
-            <div className="mono" style={{ fontSize: 32, letterSpacing: "-.035em", marginTop: 18 }}>$99</div>
+            <div className="mono" style={{ fontSize: 32, letterSpacing: "-.035em", marginTop: 18 }}>{priceLabel("coach")}</div>
             <p style={{ margin: "12px 0 0", fontSize: 14, lineHeight: 1.5, color: "#5C574B" }}>Fifteen athletes. One race-week board.</p>
           </Reveal>
         </div>

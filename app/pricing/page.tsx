@@ -314,7 +314,9 @@ export default function PricingPage() {
                 </Link>
               </div>
               <div style={{ padding: "12px 8px 20px", display: "flex", justifyContent: "center" }}>
-                <a href="#" className="btn-outline-dark2" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 38, padding: "0 16px", border: "1px solid rgba(21,20,15,.18)", borderRadius: 6, fontSize: 13.5, fontWeight: 600 }}>
+                {/* A "Talk to us" button that went nowhere, on the one tier whose
+                    whole proposition is that you can talk to us. */}
+                <a href="mailto:hello@raceos.cc?subject=RaceOS%20for%20coaches" className="btn-outline-dark2" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 38, padding: "0 16px", border: "1px solid rgba(21,20,15,.18)", borderRadius: 6, fontSize: 13.5, fontWeight: 600 }}>
                   Talk to us
                 </a>
               </div>

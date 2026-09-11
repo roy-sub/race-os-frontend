@@ -19,7 +19,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Mark } from "@/components/Mark";
+import { AccountHeader } from "@/components/AccountHeader";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiErrorState } from "@/components/ApiErrorState";
 import { routes } from "@/lib/routes";
@@ -676,33 +676,14 @@ function SettingsPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320 }}>
-      <header style={{ position: "sticky", top: 0, zIndex: 70, background: "rgba(241,238,232,.94)", backdropFilter: "blur(14px)", borderBottom: "1px solid rgba(21,20,15,.1)" }}>
-        <div style={{ maxWidth: 1360, margin: "0 auto", padding: "0 56px", height: 68, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 40 }}>
-          <Link href={routes.home} style={{ display: "flex", alignItems: "center", gap: 11 }}>
-            <Mark width={27} height={18} />
-            <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-.035em" }}>RaceOS</span>
-          </Link>
-          <nav style={{ display: "flex", alignItems: "center", gap: 32, fontSize: 14, fontWeight: 500, color: "#5C574B", whiteSpace: "nowrap" }}>
-            <Link href={routes.dashboard} style={{ color: "#5C574B" }}>Dashboard</Link>
-            <Link href={routes.myPlans} style={{ color: "#5C574B" }}>My plans</Link>
-            <Link href={routes.postRace} style={{ color: "#5C574B" }}>Review</Link>
-            <Link href={routes.settings} style={{ color: "#15140F" }}>Settings</Link>
-          </nav>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <SaveLabel state={indicator.state} />
-            <div
-              aria-hidden
-              style={{
-                width: 30, height: 30, borderRadius: "50%", flex: "none", background: "#D8D0C2",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 12.5, fontWeight: 600, color: "#5C574B",
-              }}
-            >
-              {(user?.name?.trim() || user?.email || "?").slice(0, 1).toUpperCase()}
-            </div>
-          </div>
-        </div>
-      </header>
+      {/* The shared signed-in header, not a second one.
+
+          Settings used to draw its own: a different nav (with a "Review" item
+          nothing else had), no notifications bell, and — the part that mattered
+          — no account menu, so this was the one signed-in page you could not
+          sign out from. The save indicator is the only thing it genuinely
+          needed of its own, and that slots in. */}
+      <AccountHeader active="settings" aside={<SaveLabel state={indicator.state} />} />
 
       <div style={{ maxWidth: 1360, margin: "0 auto", padding: "44px 56px 96px" }}>
         <h1 style={{ margin: 0, fontSize: 56, lineHeight: 0.96, fontWeight: 600, letterSpacing: "-.05em" }}>Settings</h1>
