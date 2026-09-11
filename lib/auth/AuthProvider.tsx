@@ -68,6 +68,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const me = await unwrap(client.GET("/api/v1/auth/me"));
         if (cancelled) return;
+        // Dropped *before* the status flips, for the same reason `adopt` does
+        // it: anything already cached was fetched during the moment between
+        // this page loading and the refresh landing — that is, as nobody. The
+        // directory is the case that bites, because what it returns depends on
+        // who is asking: fetched anonymously it carries the marketing showcase,
+        // which a signed-in athlete must never be shown. Without this, one
+        // unlucky race between a query and a token left that on screen for the
+        // rest of the session, because nothing would ever refetch it.
+        queryClient.clear();
         setUser(me);
         setStatus("authenticated");
       } catch {
@@ -77,7 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [forgetSession]);
+  }, [forgetSession, queryClient]);
 
   const adopt = useCallback(
     (auth: components["schemas"]["AuthResponse"]) => {

@@ -22,7 +22,23 @@ export type AccountAlert = { title: string; body: string; when: string; color: s
 type AccountHeaderProps = {
   active?: (typeof NAV)[number]["key"];
   alerts?: AccountAlert[];
+  /**
+   * Override the line under the account name.
+   *
+   * Only the coach console passes this. Everywhere else it is read from the
+   * account's own tier — it used to default to the literal string "RACE PLAN",
+   * which told every free account, on every page, that it had bought something
+   * it had not.
+   */
   roleLabel?: string;
+};
+
+/** `users.tier` as a person would read it. */
+const TIER_LABEL: Record<string, string> = {
+  free: "FREE ACCOUNT",
+  per_race: "RACE PLAN",
+  season: "SEASON PASS",
+  coach: "COACH",
 };
 
 /**
@@ -32,7 +48,7 @@ type AccountHeaderProps = {
  * The name is whoever is actually signed in, from `GET /auth/me` by way of the
  * auth context — not a prop, so no page can pass the wrong one.
  */
-export function AccountHeader({ active, alerts = [], roleLabel = "RACE PLAN" }: AccountHeaderProps) {
+export function AccountHeader({ active, alerts = [], roleLabel }: AccountHeaderProps) {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { user, status, signOut } = useAuth();
@@ -40,6 +56,11 @@ export function AccountHeader({ active, alerts = [], roleLabel = "RACE PLAN" }: 
   // An account with no display name is normal — `name` is optional at signup —
   // so the email is the fallback rather than an invented placeholder.
   const displayName = user?.name?.trim() || user?.email || null;
+
+  // The caller's label wins where one is given; otherwise the account's own
+  // tier, and nothing at all until it has loaded — a guess that is corrected a
+  // moment later is worse than a blank line.
+  const label = roleLabel ?? (user ? (TIER_LABEL[user.tier] ?? user.tier.toUpperCase()) : "");
 
   return (
     <header style={{ position: "sticky", top: 0, zIndex: 70, background: "rgba(241,238,232,.92)", backdropFilter: "blur(14px)", borderBottom: "1px solid rgba(21,20,15,.10)" }}>
@@ -129,7 +150,7 @@ export function AccountHeader({ active, alerts = [], roleLabel = "RACE PLAN" }: 
                 <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-.01em" }}>
                   {displayName ?? (status === "loading" ? <Skeleton width={96} height={12} /> : "Signed out")}
                 </div>
-                <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#8C8578", marginTop: 2 }}>{roleLabel}</div>
+                <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#8C8578", marginTop: 2 }}>{label}</div>
               </div>
             </div>
             {menuOpen && (

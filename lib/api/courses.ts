@@ -15,6 +15,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/lib/auth/AuthProvider";
 import { client, unwrap } from "./client";
 import { queryKeys } from "./queryKeys";
 import type { components } from "./schema";
@@ -182,7 +183,22 @@ export type CutoffCheck = {
 };
 
 export function useCourses(params: { dist?: DistanceType | null; q?: string | null } = {}) {
+  /**
+   * Held until the session is known.
+   *
+   * `GET /courses` answers differently depending on who asks — a signed-out
+   * visitor gets the marketing showcase, a signed-in athlete gets the real
+   * season without it. Firing this during the moment between page load and the
+   * refresh token landing asks it as nobody, and the anonymous answer then sits
+   * in the cache with nothing to invalidate it.
+   *
+   * The provider also clears the cache when it resolves, so this is belt and
+   * braces — but it is the half that prevents the wrong list ever being
+   * painted, rather than only correcting it afterwards.
+   */
+  const { status } = useAuth();
   return useQuery({
+    enabled: status !== "loading",
     queryKey: queryKeys.courses.list({ dist: params.dist ?? null, q: params.q ?? null }),
     queryFn: async (): Promise<CoursePage> => {
       const page = await unwrap(
@@ -222,9 +238,16 @@ export function useCourse(ref: string | null) {
 }
 
 export function useRecon(ref: string | null) {
+  /**
+   * Held until the session is known, like the directory above — and here the
+   * cost of not doing so is worse. The recon payload carries `access`, so asked
+   * anonymously it comes back locked; an athlete who has paid for this course
+   * and opens its page directly would be shown the paywall for their own map.
+   */
+  const { status } = useAuth();
   return useQuery({
     queryKey: queryKeys.courses.recon(ref ?? ""),
-    enabled: Boolean(ref),
+    enabled: Boolean(ref) && status !== "loading",
     queryFn: async (): Promise<Recon> => {
       const recon = await unwrap(
         client.GET("/api/v1/courses/{course_ref}/recon", {

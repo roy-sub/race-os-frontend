@@ -1,7 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import { Mark } from "./Mark";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { routes } from "@/lib/routes";
+import { useCourses } from "@/lib/api/courses";
 
 const productLinks = [
   { href: `${routes.home}#solver`, label: "The solver" },
@@ -11,12 +14,31 @@ const productLinks = [
   { href: routes.raceMode, label: "Race Mode" },
 ];
 
-const courseLinks = [
-  { href: routes.courseRecon, label: "Tramuntana Full" },
-  { href: routes.courseRecon, label: "North Shore Full" },
-  { href: routes.courseRecon, label: "Kalmar 70.3" },
-  { href: routes.races, label: "Race directory" },
-];
+/**
+ * The Courses column, read from the directory rather than written down.
+ *
+ * It used to be three hardcoded names — "Tramuntana Full", "North Shore Full",
+ * "Kalmar 70.3" — every one of them pointing at `/course-recon` with no course
+ * on it, so all three went to the same page regardless of which you clicked.
+ * Two of the three were demo courses the catalogue has since retired, and the
+ * third is the showcase, which a signed-in athlete is not supposed to see at
+ * all. A footer on every page of the site, naming races that are not there.
+ *
+ * Reading the real directory fixes all of it at once, and cannot go stale: the
+ * viewer's own visibility rules already decide what comes back, so a signed-in
+ * athlete gets their season and a visitor gets the showcase.
+ */
+function useCourseLinks(): { href: string; label: string }[] {
+  const { data } = useCourses();
+  const links = (data?.data ?? [])
+    .filter((course) => course.availability === "available")
+    .slice(0, 3)
+    .map((course) => ({
+      href: `${routes.courseRecon}?course=${encodeURIComponent(course.slug)}`,
+      label: course.name,
+    }));
+  return [...links, { href: routes.races, label: "Race directory" }];
+}
 
 const athleteLinks = [
   { href: routes.guide, label: "First iron distance" },
@@ -63,6 +85,7 @@ type FooterProps = {
 
 /** Shared footer — dark media band, inset cream panel, five columns, solo-founder credit. */
 export function Footer({ extra = "" }: FooterProps) {
+  const courseLinks = useCourseLinks();
   return (
     <footer style={{ position: "relative", background: "#15140F", padding: 20, overflow: "hidden" }}>
       <MediaPlaceholder
