@@ -249,19 +249,40 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
                 overflow against that width, found none, and never ran. */}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
-                {/* Whatever provenance the API returns. Nothing claims OFFICIAL. */}
-                <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 10px", border: `1px solid ${provTone}55`, borderRadius: 4, fontSize: 9.5, letterSpacing: ".14em", color: provTone }}>
-                  <span style={{ width: 5, height: 5, background: provTone, borderRadius: "50%" }} />{provLabel}
-                </span>
-                {bundle.verified_at ? (
-                  <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.4)" }}>
-                    VERIFIED {new Date(bundle.verified_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}
+                {/*
+                  The showcase gets one line, not three.
+
+                  It used to carry the same provenance row as a surveyed course:
+                  "ESTIMATED · NOT YET VERIFIED · FICTIONAL COURSE", three grey
+                  caveats stacked across the hero of the one page whose whole job
+                  is to be worth looking at. Two of them are also confusing here —
+                  Kalmar 70.3 is a real race, and what is illustrative is this
+                  drawing of it, which the note under the map says plainly and
+                  attractively. So the marketing course says what it is, once,
+                  and the honesty lives where a visitor is actually looking.
+                */}
+                {recon.access?.illustrative_map ? (
+                  <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 10px", border: "1px solid rgba(228,98,47,.45)", borderRadius: 4, fontSize: 9.5, letterSpacing: ".14em", color: "#E4622F" }}>
+                    <span style={{ width: 5, height: 5, background: "#E4622F", borderRadius: "50%" }} />
+                    SAMPLE COURSE · OPEN TO EVERYONE
                   </span>
                 ) : (
-                  <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.4)" }}>NOT YET VERIFIED</span>
-                )}
-                {course.is_fictional && (
-                  <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.4)" }}>FICTIONAL COURSE</span>
+                  <>
+                    {/* Whatever provenance the API returns. Nothing claims OFFICIAL. */}
+                    <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 10px", border: `1px solid ${provTone}55`, borderRadius: 4, fontSize: 9.5, letterSpacing: ".14em", color: provTone }}>
+                      <span style={{ width: 5, height: 5, background: provTone, borderRadius: "50%" }} />{provLabel}
+                    </span>
+                    {bundle.verified_at ? (
+                      <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.4)" }}>
+                        VERIFIED {new Date(bundle.verified_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}
+                      </span>
+                    ) : (
+                      <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.4)" }}>NOT YET VERIFIED</span>
+                    )}
+                    {course.is_fictional && (
+                      <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.4)" }}>FICTIONAL COURSE</span>
+                    )}
+                  </>
                 )}
               </div>
               {/* Set on one line at 92px, so a long official name — "IRONMAN
