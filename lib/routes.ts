@@ -10,7 +10,6 @@ export const routes = {
   courseRecon: "/course-recon",
   racePlan: "/plan",
   planBuilder: "/plan-builder",
-  checkout: "/checkout",
   login: "/login",
   signup: "/signup",
   resetPassword: "/reset-password",
@@ -23,7 +22,6 @@ export const routes = {
   admin: "/admin",
   guide: "/guide",
   sharedPlan: "/shared",
-  systemStates: "/system-states",
 } as const;
 
 /**
