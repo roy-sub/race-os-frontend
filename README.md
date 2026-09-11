@@ -35,9 +35,18 @@ npm run api:sync     # both
 Note the path: the schema is served under the `/api/v1` prefix, not at the root,
 and interactive docs are disabled in production.
 
-Two responses are typed loosely backend-side (`dict[str, object]`) and so are
-hand-typed next to the calls that read them: `GET /courses/{ref}/recon` in
-`lib/api/courses.ts`, and `GET /plans/{id}/export` in `lib/api/exports.ts`.
+A handful of responses are typed loosely backend-side (`dict[str, object]`) and
+so are hand-typed next to the calls that read them. Keep the hand-written type
+beside its caller rather than in a shared types file: when the backend changes
+one of these, the type and the code that breaks are in the same diff.
+
+| Endpoint | Hand-typed in |
+| --- | --- |
+| `GET /courses/{ref}/recon` | `lib/api/courses.ts` |
+| `GET /courses/{ref}/terrain` | `components/CourseMap.tsx` |
+| `GET /plans/{id}/export` | `lib/api/exports.ts` |
+| `GET /plans/{id}/race-mode` | `lib/api/screens.ts` |
+| `GET /admin/overview`, `GET /admin/kpis` | `lib/api/screens.ts` |
 
 ---
 
@@ -54,7 +63,45 @@ hand-typed next to the calls that read them: `GET /courses/{ref}/recon` in
 - `lib/errorCopy.ts` maps all 17 error codes to copy. `INFEASIBLE` is a verdict
   with its own component, and `PAYMENT_REQUIRED` drives the paywall.
 - Gating is read from `GET /entitlements`. Nothing in the UI encodes which tier
-  unlocks what.
+  unlocks what. Map gating is the one decision not taken from that matrix alone,
+  because it is per-course rather than per-account: the recon payload carries
+  `access.map_unlocked` and `access.map_locked_reason`, and the UI renders the
+  reason the backend gives instead of composing its own.
+- Every page that shows athlete data is a `GuardedPage` reading a live endpoint.
+  There are no per-user fixtures left in `lib/` — the files there hold formatting
+  helpers and copy only. `AuthProvider` calls `queryClient.clear()` on **both**
+  sign-in and sign-out, so a cached answer for one account can never be painted
+  under another.
+
+---
+
+## The 3D course map
+
+The map is a port of the `course-map-3d` repository, which is the design
+reference: same Three.js scene, same palette, same camera, same marker overlay.
+The port is held to it by comparison against a running copy of the original, not
+by inspection — see `/map-check`.
+
+- `lib/map/engine.js` — the scene. Ported with one seam added: a venue may now
+  carry a baked terrain `field` instead of the original's procedural heightmap.
+- `lib/map/raster.js` — that seam. `RasterTerrain` samples the baked field
+  (height, water level, signed distance to shore) and `venueFromField` turns a
+  `GET /courses/{ref}/terrain` payload into the venue shape the engine expects.
+- `lib/map/venues/kalmar.js` — the original procedural venue, copied unchanged.
+- `components/CourseMap3D.jsx` — the ported React shell (stage, leg switcher,
+  stat cards, marker layer).
+- `components/CourseMap.tsx` — the only thing the app imports. It picks between
+  `ShowcaseMap` (Kalmar, procedural, signed-out visitors), `SurveyedMap` (a real
+  course from baked terrain) and `LockedMap` (the reason, and the way to unlock).
+
+Two maps, and the difference is stated on the map rather than left for the
+viewer to infer. The showcase is a tuned graphic whose legs disagree on scale,
+so it carries a note saying it is illustrative and not to scale. A surveyed map
+is built from real route geometry and real elevation, and says what it was built
+from in its footer attribution.
+
+`three` is the only heavy dependency in the app and is loaded by the map
+components alone.
 
 ---
 
