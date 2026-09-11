@@ -249,9 +249,20 @@ function BuilderScreen() {
 
   const canReach = (n: number) => n <= step || (n <= 4 && Boolean(planId)) || (n > 4 && Boolean(solved));
 
-  const filteredCourses = (courses.data?.data ?? []).filter((c) =>
-    courseQuery.trim() ? `${c.name} ${c.place}`.toLowerCase().includes(courseQuery.trim().toLowerCase()) : true,
-  );
+  /* Only races that can actually be planned for.
+     A coming-soon listing belongs on the calendar, where it says so; putting
+     it in a picker offers a choice the next step refuses, which is the worst
+     kind of dead end — one the product led them into. */
+  const filteredCourses = (courses.data?.data ?? [])
+    .filter((c) => c.availability === "available")
+    .filter((c) =>
+      courseQuery.trim()
+        ? `${c.name} ${c.place}`.toLowerCase().includes(courseQuery.trim().toLowerCase())
+        : true,
+    );
+  const comingSoonCount = (courses.data?.data ?? []).filter(
+    (c) => c.availability !== "available",
+  ).length;
 
   // --- the right-hand panel -------------------------------------------------
   const panelSplits = solved?.splits ?? [];
@@ -353,8 +364,18 @@ function BuilderScreen() {
                       );
                     })}
                     {!courses.isPending && filteredCourses.length === 0 && (
-                      <div style={{ padding: "18px 15px", fontSize: 14, color: "#8C8578" }}>
-                        Nothing matches that. <Link href={routes.races} style={{ color: "#C6461B" }}>Browse the directory</Link>.
+                      <div style={{ padding: "18px 15px", fontSize: 14, lineHeight: 1.55, color: "#8C8578" }}>
+                        Nothing planable matches that.{" "}
+                        <Link href={routes.races} style={{ color: "#C6461B" }}>See the calendar</Link>, or{" "}
+                        <Link href={routes.addRace} style={{ color: "#C6461B" }}>add the race yourself</Link>.
+                      </div>
+                    )}
+                    {!courses.isPending && comingSoonCount > 0 && (
+                      <div style={{ padding: "13px 15px", fontSize: 12.5, lineHeight: 1.5, color: "#A8A192", borderTop: "1px solid rgba(21,20,15,.07)" }}>
+                        {comingSoonCount} more {comingSoonCount === 1 ? "race is" : "races are"} on the
+                        calendar without course data yet.{" "}
+                        <Link href={routes.addRace} style={{ color: "#C6461B" }}>Add yours</Link> if you
+                        cannot wait.
                       </div>
                     )}
                   </div>

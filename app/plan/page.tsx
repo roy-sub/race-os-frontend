@@ -7,6 +7,7 @@ import { AccountHeader } from "@/components/AccountHeader";
 import { Reveal } from "@/components/Reveal";
 import { ApiErrorState } from "@/components/ApiErrorState";
 import { OsmAttribution } from "@/components/OsmAttribution";
+import { SurveyedMap } from "@/components/CourseMap";
 import { Skeleton } from "@/components/Skeleton";
 import { routes } from "@/lib/routes";
 import { GuardedPage } from "@/lib/auth/GuardedPage";
@@ -17,7 +18,7 @@ import { useRecon } from "@/lib/api/courses";
 import { asSolved, usePlan, type SolvedPlan } from "@/lib/api/plans";
 import { downloadExport, useExportManifest, type ExportEntry } from "@/lib/api/exports";
 import {
-  LEG_COLOR, elevationPath, formatClock, formatKm, formatMargin, formatMetres, projectLegs, sortLegs,
+  LEG_COLOR, elevationPath, formatClock, formatKm, formatMargin, formatMetres, sortLegs,
 } from "@/lib/courseGeo";
 
 const TABS = [
@@ -597,27 +598,36 @@ function PlanBody({
           {recon.error && <ApiErrorState error={recon.error} onRetry={() => void recon.refetch()} />}
           {recon.data && (() => {
             const legs = sortLegs(recon.data.legs);
-            const proj = projectLegs(legs, { width: 1180, height: 300 }, 20);
             const bike = recon.data.elevation_profile?.legs?.BIKE;
-            const chart = bike ? elevationPath(bike, { width: 1180, top: 330, bottom: 440 }) : null;
+            const chart = bike ? elevationPath(bike, { width: 1180, top: 8, bottom: 120 }) : null;
             return (
               <>
-                <div style={{ background: "#15140F", borderRadius: 12, padding: 20 }}>
-                  <svg viewBox="0 0 1180 440" style={{ display: "block", width: "100%" }} role="img" aria-label={`Route and elevation for ${plan.course_name}`}>
-                    <defs>
-                      <linearGradient id="pl-fill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#E4622F" stopOpacity={0.26} />
-                        <stop offset="100%" stopColor="#E4622F" stopOpacity={0.02} />
-                      </linearGradient>
-                    </defs>
-                    {proj?.paths.map((pth) => (
-                      <path key={pth.leg} d={pth.d} fill="none" stroke={pth.leg === "BIKE" ? "rgba(255,255,255,.4)" : "rgba(255,255,255,.22)"} strokeWidth={pth.leg === "BIKE" ? 1.8 : 1.4} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={pth.leg === "RUN" ? "5 5" : undefined} />
-                    ))}
-                    {chart && <path d={chart.area} fill="url(#pl-fill)" />}
-                    {chart && <path d={chart.line} fill="none" stroke="#E4622F" strokeWidth={1.7} strokeLinejoin="round" />}
-                  </svg>
-                  <OsmAttribution attribution={recon.data.bundle.attribution} tone="dark" style={{ marginTop: 10 }} />
-                </div>
+                {/* The same renderer as everywhere else. An athlete looking at
+                    the course they solved against should be looking at the same
+                    map they chose it from. */}
+                <SurveyedMap
+                  courseRef={recon.data.course.slug}
+                  courseName={plan.course_name ?? undefined}
+                  height="min(66vh,700px)"
+                />
+                {chart && (
+                  <div style={{ background: "#15140F", borderRadius: 12, padding: "20px 24px 18px", marginTop: 14 }}>
+                    <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".16em", color: "rgba(251,248,242,.4)" }}>
+                      BIKE ELEVATION
+                    </div>
+                    <svg viewBox="0 0 1180 128" style={{ display: "block", width: "100%", marginTop: 12 }} role="img" aria-label={`Bike elevation profile for ${plan.course_name}`}>
+                      <defs>
+                        <linearGradient id="pl-fill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#E4622F" stopOpacity={0.26} />
+                          <stop offset="100%" stopColor="#E4622F" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <path d={chart.area} fill="url(#pl-fill)" />
+                      <path d={chart.line} fill="none" stroke="#E4622F" strokeWidth={1.7} strokeLinejoin="round" />
+                    </svg>
+                    <OsmAttribution attribution={recon.data.bundle.attribution} tone="dark" style={{ marginTop: 10 }} />
+                  </div>
+                )}
                 <div style={{ display: "grid", gridTemplateColumns: `repeat(${legs.length},1fr)`, gap: 14, marginTop: 16 }}>
                   {legs.map((l) => (
                     <div key={l.leg} style={{ background: "#FBF8F2", borderRadius: 12, padding: "22px 24px" }}>
