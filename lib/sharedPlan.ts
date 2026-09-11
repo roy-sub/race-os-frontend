@@ -1,21 +1,55 @@
-// Shared Plan (token-accessed, read-only) page data, ported 1:1 from the prototype.
+/**
+ * Presentation for a shared plan. **No athlete data lives here.**
+ *
+ * Three legs, four gates and a fuelling block used to be module constants —
+ * one athlete's race, shown to anyone who opened any share link. The page now
+ * reads `GET /shared/{token}`, and what comes back is filtered server-side by
+ * the link's own scope.
+ *
+ * The one thing worth stating about that filter: **no scope exposes a
+ * constraint value**, `full_plan` included. It is enforced field by field
+ * inside every block, because it has been caught failing once — bag items
+ * carried a "Why this?" reason, and "Swim leg planned at 1:56/100m" is a
+ * constraint value written out in prose.
+ */
 
-export const LEGS = [
-  { name: "SWIM", dist: "3.8 KM", target: "1:44", unit: "/100m", split: "1:06", note: "Non-wetsuit", color: "#4F7C93", tint: "rgba(79,124,147,.13)" },
-  { name: "BIKE", dist: "180.2 KM", target: "208", unit: "w", split: "6:05", note: "0.71 IF", color: "#E4622F", tint: "rgba(228,98,47,.13)" },
-  { name: "RUN", dist: "42.2 KM", target: "6:12", unit: "/km", split: "4:21", note: "Heat adjusted", color: "#64707A", tint: "rgba(100,112,122,.13)" },
-];
+import type { SharedPlan } from "./api/screens";
 
-export const GATES = [
-  { name: "SWIM EXIT", margin: "+1:14", eta: "1:06", limit: "2:20" },
-  { name: "BIKE KM 120", margin: "+2:19", eta: "6:11", limit: "8:30" },
-  { name: "BIKE CUT-OFF", margin: "+1:21", eta: "7:19", limit: "10:30" },
-  { name: "FINISH LINE", margin: "+4:15", eta: "11:45", limit: "16:00" },
-];
+export type ShareScope = SharedPlan["scope"];
 
-export const FUEL = [
-  { k: "CARBOHYDRATE", v: "78", u: "g/hr" },
-  { k: "FLUID", v: "760", u: "ml/hr" },
-  { k: "SODIUM", v: "950", u: "mg/hr" },
-  { k: "CAFFEINE", v: "400", u: "mg total" },
-];
+/** What each scope actually shows, said plainly to the person reading it. */
+export const SCOPE_COPY: Record<string, { name: string; blurb: string }> = {
+  splits_only: {
+    name: "Splits only",
+    blurb: "Target pace or power per leg, and the projected split for each.",
+  },
+  splits_and_gates: {
+    name: "Splits and cut-offs",
+    blurb: "The pacing, plus every published cut-off and the margin against it.",
+  },
+  full_plan: {
+    name: "Full plan",
+    blurb:
+      "Pacing, cut-offs, fuelling, aid actions and bags. Not the constraint values behind them — no scope shares those.",
+  },
+};
+
+export function scopeCopy(scope: string) {
+  return (
+    SCOPE_COPY[scope] ?? {
+      name: scope.replace(/_/g, " "),
+      blurb: "What the athlete chose to share.",
+    }
+  );
+}
+
+/** A share link is time-bounded. Say how long is left, not just when it ends. */
+export function expiresIn(iso: string): string {
+  const expires = new Date(iso);
+  if (Number.isNaN(expires.valueOf())) return "";
+  const hours = Math.round((expires.getTime() - Date.now()) / 3_600_000);
+  if (hours <= 0) return "expired";
+  if (hours < 24) return `${hours} ${hours === 1 ? "hour" : "hours"} left`;
+  const days = Math.round(hours / 24);
+  return `${days} ${days === 1 ? "day" : "days"} left`;
+}

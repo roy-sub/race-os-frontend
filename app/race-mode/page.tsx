@@ -1,206 +1,323 @@
 "use client";
 
-import { useState } from "react";
+/**
+ * Race Mode — one plan, cached whole, for a phone with no signal.
+ *
+ * The server's promise is `offline.complete`: everything this screen renders is
+ * in the one payload, so race day makes no network requests. That is why it is
+ * fetched once with an infinite stale time and never refetched on focus — a
+ * phone in a transition bag must not wake up and try to re-download a plan.
+ *
+ * What was here before was a set of hand-written phone screens describing one
+ * fictional athlete's race. Every number below is from that athlete's own
+ * solved plan.
+ */
+
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Mark } from "@/components/Mark";
-import { Reveal } from "@/components/Reveal";
+import { Skeleton } from "@/components/Skeleton";
+import { ApiErrorState } from "@/components/ApiErrorState";
 import { routes } from "@/lib/routes";
 import { GuardedPage } from "@/lib/auth/GuardedPage";
-import {
-  ACTION_BG, ACTION_BORDER, ACTION_COLOR, CACHED, CONSTRAINTS, NAV_BTNS, NEVERS,
-  PHASES, PRINCIPLES, STATUS_COLOR,
-} from "@/lib/raceMode";
+import { formatLongDate, useMyPlans } from "@/lib/api/account";
+import { useRaceMode, type RaceModePayload } from "@/lib/api/screens";
+import { formatBarrierName, formatClock, formatMargin, LEG_COLOR } from "@/lib/courseGeo";
 
-function RaceModePage() {
-  const [phase, setPhase] = useState(2);
-  const p = PHASES[phase];
-  const statusFg = STATUS_COLOR[p.statusState];
-  const actionFg = ACTION_COLOR[p.actionState];
-  const actionBg = ACTION_BG[p.actionState];
-  const actionBorder = ACTION_BORDER[p.actionState];
+const PHONE_W = 372;
 
+const CARD: React.CSSProperties = {
+  background: "#FBF8F2",
+  borderRadius: 12,
+  boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)",
+};
+
+/** The phone frame the design puts every race-day screen inside. */
+function Phone({ children, label }: { children: React.ReactNode; label: string }) {
   return (
-    <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320, padding: "44px 0 80px" }}>
-      <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 56px" }}>
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 48, marginBottom: 34 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-              <Mark width={26} height={17} />
-              <span style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-.035em" }}>RaceOS</span>
-              <span className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#A8A192", marginLeft: 6 }}>RACE MODE · OFFLINE BY DESIGN</span>
-            </div>
-            <Reveal as="h1" style={{ margin: "20px 0 0", fontSize: 52, lineHeight: 1, fontWeight: 600, letterSpacing: "-.048em" }}>One number at a time.</Reveal>
-            <Reveal as="p" delay={0.05} style={{ margin: "13px 0 0", maxWidth: 560, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>Race Mode runs on the phone in your bento box, in bright sun, with wet hands, on no signal. Every decision is pre-made — it only tells you the next one.</Reveal>
-          </div>
-          <div style={{ display: "flex", gap: 10, flex: "none" }}>
-            <Link href={routes.racePlan} className="row-hover-border" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 42, padding: "0 17px", border: "1px solid rgba(21,20,15,.18)", borderRadius: 6, fontSize: 13.5, fontWeight: 600 }}>Back to plan</Link>
-            <Link href={routes.dashboard} className="row-hover-border" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 42, padding: "0 17px", border: "1px solid rgba(21,20,15,.18)", borderRadius: 6, fontSize: 13.5, fontWeight: 600 }}>Dashboard</Link>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "404px minmax(0,1fr)", gap: 32, alignItems: "start" }}>
-
-          <div style={{ position: "sticky", top: 44 }}>
-            <div style={{ background: "#15140F", borderRadius: 44, padding: 11, boxShadow: "0 40px 90px -40px rgba(21,20,15,.6)" }}>
-              <div style={{ position: "relative", background: "#0B0A09", borderRadius: 34, overflow: "hidden", height: 772, display: "flex", flexDirection: "column" }}>
-
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 26px 10px", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "rgba(251,248,242,.75)", flex: "none" }}>
-                  <span>{p.clock}</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 9, letterSpacing: ".1em", color: "rgba(251,248,242,.4)" }}>
-                      <span style={{ width: 4, height: 4, borderRadius: "50%", background: "rgba(251,248,242,.4)" }} />NO SIGNAL
-                    </span>
-                    <span>{p.battery}</span>
-                  </div>
-                </div>
-
-                <div style={{ padding: "8px 22px 0", flex: "none" }}>
-                  <div style={{ display: "flex", gap: 3, padding: 3, background: "rgba(251,248,242,.07)", borderRadius: 8 }}>
-                    {PHASES.map((x, k) => (
-                      <div key={x.key} onClick={() => setPhase(k)} style={{ flex: x.flex, display: "flex", alignItems: "center", justifyContent: "center", height: 32, borderRadius: 6, cursor: "pointer", background: k === phase ? "#E4622F" : "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: ".11em", color: k === phase ? "#fff" : "rgba(251,248,242,.42)", whiteSpace: "nowrap" }}>{x.name}</div>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ flex: 1, overflow: "hidden", padding: "26px 26px 0", display: "flex", flexDirection: "column" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span className="mono" style={{ fontSize: 9, letterSpacing: ".17em", color: "rgba(251,248,242,.4)" }}>{p.label}</span>
-                    <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: ".13em", color: statusFg }}>
-                      <span className="om-breathe" style={{ width: 5, height: 5, borderRadius: "50%", background: statusFg }} />{p.status}
-                    </span>
-                  </div>
-
-                  <div style={{ marginTop: 22 }}>
-                    <div className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "rgba(251,248,242,.35)" }}>{p.bigLabel}</div>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 8 }}>
-                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 96, lineHeight: 0.82, letterSpacing: "-.06em", color: "#FBF8F2" }}>{p.bigValue}</span>
-                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 19, color: "rgba(251,248,242,.42)" }}>{p.bigUnit}</span>
-                    </div>
-                    <div style={{ fontSize: 16, lineHeight: 1.4, color: "rgba(251,248,242,.6)", marginTop: 14 }}>{p.bigNote}</div>
-                  </div>
-
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 1, background: "rgba(251,248,242,.1)", borderRadius: 10, overflow: "hidden", marginTop: 24 }}>
-                    {p.tiles.map((t) => (
-                      <div key={t.k} style={{ background: "#0B0A09", padding: "16px 17px 15px" }}>
-                        <div className="mono" style={{ fontSize: 8, letterSpacing: ".14em", color: "rgba(251,248,242,.35)" }}>{t.k}</div>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginTop: 9 }}>
-                          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 24, letterSpacing: "-.035em", color: t.v.startsWith("+") ? "#7CC08F" : "#FBF8F2" }}>{t.v}</span>
-                          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "rgba(251,248,242,.32)" }}>{t.u}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ marginTop: 20, padding: "16px 18px", borderRadius: 10, background: actionBg, border: `1px solid ${actionBorder}` }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: actionFg, flex: "none" }} />
-                      <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: actionFg }}>{p.actionTag}</span>
-                    </div>
-                    <div style={{ fontSize: 18, lineHeight: 1.32, fontWeight: 500, letterSpacing: "-.024em", color: "#FBF8F2", marginTop: 11 }}>{p.actionText}</div>
-                  </div>
-
-                  <div style={{ marginTop: "auto", padding: "18px 0 22px" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, letterSpacing: ".13em", color: "rgba(251,248,242,.3)" }}>
-                      <span>{p.progLabel}</span><span>{p.progRight}</span>
-                    </div>
-                    <div style={{ height: 4, borderRadius: 2, background: "rgba(251,248,242,.1)", marginTop: 10, position: "relative", overflow: "hidden" }}>
-                      <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: p.progW, background: statusFg, borderRadius: 2, transition: "width .5s cubic-bezier(.16,1,.3,1)" }} />
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 1, background: "rgba(251,248,242,.1)", flex: "none" }}>
-                  {NAV_BTNS.map((n, k) => (
-                    <div key={n} style={{ background: "#0B0A09", padding: "16px 0 22px", textAlign: "center", cursor: "pointer" }}>
-                      <div className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: k === 0 ? "#FBF8F2" : "rgba(251,248,242,.4)" }}>{n}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginTop: 16 }}>
-              <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#A8A192" }}>SCRUB THE RACE</span>
-              <div style={{ display: "flex", gap: 4 }}>
-                {PHASES.map((x, k) => (
-                  <span key={x.key} onClick={() => setPhase(k)} className="mono" style={{ fontSize: 8.5, letterSpacing: ".1em", padding: "5px 9px", borderRadius: 4, cursor: "pointer", background: k === phase ? "#15140F" : "rgba(21,20,15,.06)", color: k === phase ? "#FBF8F2" : "#8C8578", whiteSpace: "nowrap" }}>{x.name}</span>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
-              {PRINCIPLES.map((pr, i) => (
-                <Reveal key={pr.n} delay={i * 0.06} style={{ background: "#FBF8F2", borderRadius: 12, padding: "24px 26px 26px", boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#E4622F" }}>{pr.n}</div>
-                  <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-.026em", marginTop: 14 }}>{pr.name}</div>
-                  <p style={{ margin: "9px 0 0", fontSize: 14, lineHeight: 1.5, color: "#5C574B" }}>{pr.desc}</p>
-                </Reveal>
-              ))}
-            </div>
-
-            <Reveal style={{ background: "#FBF8F2", borderRadius: 12, padding: "26px 30px 24px", boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 32 }}>
-                <div>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>DESIGN CONSTRAINTS WE BUILT AGAINST</div>
-                  <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-.033em", marginTop: 11 }}>The phone is the worst screen you own on race day.</div>
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "0 40px", marginTop: 22 }}>
-                {CONSTRAINTS.map((c) => (
-                  <div key={c.k} style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 18, padding: "14px 0", borderBottom: "1px solid rgba(21,20,15,.07)", alignItems: "baseline" }}>
-                    <span className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "#A8A192" }}>{c.k}</span>
-                    <span style={{ fontSize: 14, lineHeight: 1.5, color: "#3D3A31" }}>{c.v}</span>
-                  </div>
-                ))}
-              </div>
-            </Reveal>
-
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 14 }}>
-              <Reveal style={{ background: "#15140F", borderRadius: 12, padding: "26px 28px", boxShadow: "0 20px 50px -30px rgba(21,20,15,.5)" }}>
-                <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "rgba(251,248,242,.4)" }}>OFFLINE GUARANTEE</div>
-                <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-.028em", color: "#FBF8F2", marginTop: 13 }}>Everything is on the device before you start.</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 20 }}>
-                  {CACHED.map((c) => (
-                    <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style={{ flex: "none" }}><path d="M2.5 6.2 4.8 8.5 9.5 3.8" stroke="#7CC08F" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></svg>
-                      <span style={{ fontSize: 13.5, color: "rgba(251,248,242,.72)" }}>{c.name}</span>
-                      <span style={{ marginLeft: "auto", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "rgba(251,248,242,.35)" }}>{c.size}</span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid rgba(251,248,242,.1)", fontSize: 13, lineHeight: 1.5, color: "rgba(251,248,242,.5)" }}>Cached at bike check-in on Saturday. No request is made on race day, so a dead cell tower changes nothing.</div>
-              </Reveal>
-
-              <Reveal delay={0.06} style={{ background: "#FBF8F2", borderRadius: 12, padding: "26px 28px", boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>WHAT RACE MODE WILL NOT DO</div>
-                <div style={{ display: "flex", flexDirection: "column", marginTop: 16 }}>
-                  {NEVERS.map((n) => (
-                    <div key={n.name} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "13px 0", borderBottom: "1px solid rgba(21,20,15,.07)" }}>
-                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#C0392B", flex: "none", marginTop: 1 }}>×</span>
-                      <span>
-                        <span style={{ display: "block", fontSize: 15, fontWeight: 500, letterSpacing: "-.018em" }}>{n.name}</span>
-                        <span style={{ display: "block", fontSize: 13, lineHeight: 1.45, color: "#8C8578", marginTop: 4 }}>{n.why}</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </Reveal>
-            </div>
-          </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: "none" }}>
+      <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".16em", color: "#A8A192" }}>{label}</div>
+      <div
+        style={{
+          width: PHONE_W, borderRadius: 26, background: "#0F0E0C", padding: 10,
+          boxShadow: "0 30px 70px -34px rgba(12,9,6,.65)",
+        }}
+      >
+        <div style={{ borderRadius: 18, background: "#15140F", overflow: "hidden", minHeight: 560, display: "flex", flexDirection: "column" }}>
+          {children}
         </div>
       </div>
     </div>
   );
 }
 
-/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+function PhoneHeader({ payload }: { payload: RaceModePayload }) {
+  return (
+    <div style={{ padding: "18px 20px 16px", borderBottom: "1px solid rgba(251,248,242,.08)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".16em", color: "rgba(251,248,242,.4)" }}>
+          {payload.race.start_time_local} START
+        </span>
+        <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#7CC08F" }}>
+          CACHED · OFFLINE
+        </span>
+      </div>
+      <div style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-.026em", color: "#FBF8F2", marginTop: 12 }}>
+        {payload.course.name}
+      </div>
+      <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".12em", color: "rgba(251,248,242,.38)", marginTop: 7 }}>
+        {payload.race.bib ? `BIB ${payload.race.bib} · ` : ""}PLAN V{payload.plan.version}
+      </div>
+    </div>
+  );
+}
+
+function SplitsScreen({ payload }: { payload: RaceModePayload }) {
+  return (
+    <>
+      <PhoneHeader payload={payload} />
+      <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
+        {payload.plan.splits.map((split) => (
+          <div key={split.leg} style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(251,248,242,.05)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: LEG_COLOR[split.leg] ?? "#8C8578" }}>
+                {split.leg}
+              </span>
+              <span className="mono" style={{ fontSize: 10, color: "rgba(251,248,242,.38)" }}>{split.distance}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 12 }}>
+              <span className="mono" style={{ fontSize: 30, letterSpacing: "-.045em", color: "#FBF8F2" }}>
+                {split.target_pace_or_power}
+              </span>
+              <span className="mono" style={{ fontSize: 12, color: "rgba(251,248,242,.45)" }}>{split.unit}</span>
+            </div>
+            <div className="mono" style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, letterSpacing: ".1em", color: "rgba(251,248,242,.34)", marginTop: 10 }}>
+              <span>{split.split_label ?? formatClock(split.split_minutes)}</span>
+              {split.note && <span>{split.note.toUpperCase()}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function GatesScreen({ payload }: { payload: RaceModePayload }) {
+  return (
+    <>
+      <PhoneHeader payload={payload} />
+      <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
+        {payload.plan.gates.map((gate) => {
+          const colour = gate.margin_minutes < 0 ? "#E4622F" : gate.margin_minutes < 20 ? "#E0A33C" : "#7CC08F";
+          return (
+            <div key={gate.name} style={{ padding: "13px 15px", borderRadius: 10, background: "rgba(251,248,242,.05)" }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ fontSize: 14, color: "#FBF8F2", letterSpacing: "-.012em" }}>{formatBarrierName(gate.name)}</span>
+                <span className="mono" style={{ fontSize: 14, color: colour }}>
+                  {gate.margin_label ?? formatMargin(gate.margin_minutes)}
+                </span>
+              </div>
+              <div className="mono" style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, letterSpacing: ".1em", color: "rgba(251,248,242,.34)", marginTop: 9 }}>
+                <span>YOU {formatClock(gate.eta_minutes)}</span>
+                <span>LIMIT {formatClock(gate.limit_minutes)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function FuellingScreen({ payload }: { payload: RaceModePayload }) {
+  const fuelling = payload.plan.fuelling;
+  return (
+    <>
+      <PhoneHeader payload={payload} />
+      <div style={{ padding: "18px 20px", flex: 1 }}>
+        {fuelling ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 1, background: "rgba(251,248,242,.09)", borderRadius: 10, overflow: "hidden" }}>
+            {[
+              { k: "CARB / HR", v: `${Math.round(fuelling.carb_g_per_hr)}`, u: "g" },
+              { k: "FLUID / HR", v: `${Math.round(fuelling.fluid_ml_per_hr)}`, u: "ml" },
+              { k: "SODIUM / HR", v: `${Math.round(fuelling.sodium_mg_per_hr)}`, u: "mg" },
+              { k: "CAFFEINE", v: `${Math.round(fuelling.caffeine_mg_total)}`, u: "mg total" },
+            ].map((tile) => (
+              <div key={tile.k} style={{ background: "#15140F", padding: "16px 16px 15px" }}>
+                <div className="mono" style={{ fontSize: 8, letterSpacing: ".14em", color: "rgba(251,248,242,.34)" }}>{tile.k}</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 10 }}>
+                  <span className="mono" style={{ fontSize: 24, letterSpacing: "-.04em", color: "#FBF8F2" }}>{tile.v}</span>
+                  <span className="mono" style={{ fontSize: 10, color: "rgba(251,248,242,.4)" }}>{tile.u}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".16em", color: "rgba(251,248,242,.34)", marginTop: 20 }}>
+          AID STATIONS · ONE ACTION EACH
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 12 }}>
+          {payload.plan.aid_actions.slice(0, 8).map((action) => (
+            <div key={action.ordinal} style={{ padding: "11px 13px", borderRadius: 9, background: "rgba(251,248,242,.05)" }}>
+              <div className="mono" style={{ fontSize: 9, letterSpacing: ".12em", color: "rgba(251,248,242,.38)" }}>
+                {action.leg} KM {action.at_km.toFixed(1)} · {formatClock(action.at_clock_minutes)}
+              </div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.45, color: "#FBF8F2", marginTop: 6 }}>{action.action_text}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function BagsScreen({ payload }: { payload: RaceModePayload }) {
+  return (
+    <>
+      <PhoneHeader payload={payload} />
+      <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
+        {payload.plan.bags.map((bag) => (
+          <div key={bag.key} style={{ padding: "13px 15px", borderRadius: 10, background: "rgba(251,248,242,.05)" }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ fontSize: 14.5, color: "#FBF8F2", letterSpacing: "-.014em" }}>{bag.name}</span>
+              <span className="mono" style={{ fontSize: 12, color: "rgba(251,248,242,.4)" }}>{bag.item_count}</span>
+            </div>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: ".12em", color: "rgba(251,248,242,.34)", marginTop: 7 }}>
+              {bag.when_label.toUpperCase()}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function RaceModeBody({ planId }: { planId: string | null }) {
+  const plans = useMyPlans(!planId);
+  const fallback = (plans.data?.active ?? []).find((card) => card.plan_id)?.plan_id ?? null;
+  const id = planId ?? fallback;
+  const { data, isPending, error } = useRaceMode(id);
+
+  const pendingDrift = useMemo(() => data?.pending_drift ?? [], [data]);
+
+  if (!id && !plans.isPending) {
+    return (
+      <div style={{ ...CARD, padding: "80px 40px", border: "1px dashed rgba(21,20,15,.2)", textAlign: "center", boxShadow: "none" }}>
+        <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>NOTHING TO TAKE TO THE LINE</div>
+        <div style={{ margin: "18px auto 0", maxWidth: 440, fontSize: 26, lineHeight: 1.2, fontWeight: 500, letterSpacing: "-.03em" }}>
+          Race Mode opens once a plan is solved.
+        </div>
+        <p style={{ margin: "12px auto 0", maxWidth: 420, fontSize: 15, lineHeight: 1.55, color: "#6B6455" }}>
+          It is the whole plan cached on your phone — splits, cut-offs, fuelling and bags — so race
+          day makes no network requests at all.
+        </p>
+        <Link href={routes.myPlans} className="btn-accent" style={{ display: "inline-flex", alignItems: "center", height: 46, padding: "0 24px", marginTop: 24, background: "#E4622F", color: "#fff", borderRadius: 7, fontSize: 15, fontWeight: 600 }}>
+          My plans
+        </Link>
+      </div>
+    );
+  }
+
+  if (error) return <ApiErrorState error={error} />;
+  if (isPending || !data) {
+    return (
+      <div style={{ display: "flex", gap: 20 }}>
+        {[0, 1, 2, 3].map((i) => <Skeleton key={i} width={PHONE_W} height={580} radius={26} />)}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div style={{ ...CARD, padding: "22px 26px", marginBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-.026em" }}>{data.course.name}</div>
+            <div style={{ fontSize: 13.5, color: "#8C8578", marginTop: 5 }}>
+              {formatLongDate(data.race.event_date)} · {data.course.place} · {data.race.start_time_local} start
+            </div>
+          </div>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "#3E7B55", whiteSpace: "nowrap" }}>
+            {data.offline.complete ? "CACHED IN FULL · NO REQUESTS ON RACE DAY" : "PARTIAL CACHE"}
+          </div>
+        </div>
+        {pendingDrift.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 13, marginTop: 18, padding: "13px 15px", borderRadius: 9, background: "rgba(224,163,60,.09)", border: "1px solid rgba(224,163,60,.36)" }}>
+            <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#A0701A", flex: "none" }}>DRIFT OUTSTANDING</span>
+            <span style={{ fontSize: 14, lineHeight: 1.45, color: "#3D3A31" }}>
+              This copy predates a change you have not applied. Review it before you cache for the
+              start line — finding out at kilometre ninety is the thing this warning exists to
+              prevent.
+            </span>
+          </div>
+        )}
+        {data.plan.assumed_fields.length > 0 && (
+          <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6B6455", marginTop: 14 }}>
+            Assumed, because nothing measured was available:{" "}
+            {data.plan.assumed_fields.join(", ")}.
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 26, overflowX: "auto", paddingBottom: 8 }}>
+        <Phone label="SPLITS"><SplitsScreen payload={data} /></Phone>
+        <Phone label="CUT-OFFS"><GatesScreen payload={data} /></Phone>
+        <Phone label="FUELLING"><FuellingScreen payload={data} /></Phone>
+        <Phone label="BAGS"><BagsScreen payload={data} /></Phone>
+      </div>
+
+      <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#B8B1A2", marginTop: 20 }}>
+        {data.bundle.attribution.toUpperCase()}
+      </div>
+    </>
+  );
+}
+
+function RaceModeScreen() {
+  const params = useSearchParams();
+  const [planId] = useState<string | null>(params.get("plan"));
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320 }}>
+      <header style={{ position: "sticky", top: 0, zIndex: 70, background: "rgba(241,238,232,.94)", backdropFilter: "blur(14px)", borderBottom: "1px solid rgba(21,20,15,.1)" }}>
+        <div style={{ maxWidth: 1360, margin: "0 auto", padding: "0 56px", height: 68, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 40 }}>
+          <Link href={routes.home} style={{ display: "flex", alignItems: "center", gap: 11 }}>
+            <Mark width={27} height={18} />
+            <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-.035em" }}>RaceOS</span>
+          </Link>
+          <nav style={{ display: "flex", alignItems: "center", gap: 32, fontSize: 14, fontWeight: 500, color: "#5C574B", whiteSpace: "nowrap" }}>
+            <Link href={routes.dashboard} style={{ color: "#5C574B" }}>Dashboard</Link>
+            <Link href={routes.myPlans} style={{ color: "#5C574B" }}>My plans</Link>
+            <Link href={routes.raceMode} style={{ color: "#15140F" }}>Race mode</Link>
+          </nav>
+          <span className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "#8C8578" }}>OFFLINE READY</span>
+        </div>
+      </header>
+
+      <div style={{ maxWidth: 1360, margin: "0 auto", padding: "44px 56px 96px" }}>
+        <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>RACE DAY</div>
+        <h1 style={{ margin: "16px 0 0", fontSize: 56, lineHeight: 0.96, fontWeight: 600, letterSpacing: "-.05em" }}>Race mode</h1>
+        <p style={{ margin: "15px 0 0", maxWidth: 560, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>
+          Your whole plan, cached on the phone. No signal needed at the start line, in transition or
+          on the far side of the bike loop.
+        </p>
+
+        <div style={{ marginTop: 32 }}>
+          <RaceModeBody planId={planId} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function GuardedRaceModePage() {
   return (
     <GuardedPage>
-      <RaceModePage />
+      <Suspense fallback={null}>
+        <RaceModeScreen />
+      </Suspense>
     </GuardedPage>
   );
 }

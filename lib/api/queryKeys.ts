@@ -53,6 +53,27 @@ export const queryKeys = {
       [...queryKeys.notifications.all, "list", params] as const,
     preferences: () => [...queryKeys.notifications.all, "preferences"] as const,
   },
+  postRace: {
+    all: ["post-race"] as const,
+    analyses: () => [...queryKeys.postRace.all, "analyses"] as const,
+    analysis: (id: string) => [...queryKeys.postRace.all, "analysis", id] as const,
+  },
+  coach: {
+    all: ["coach"] as const,
+    board: () => [...queryKeys.coach.all, "board"] as const,
+    athletes: () => [...queryKeys.coach.all, "athletes"] as const,
+  },
+  admin: {
+    all: ["admin"] as const,
+    overview: () => [...queryKeys.admin.all, "overview"] as const,
+    kpis: () => [...queryKeys.admin.all, "kpis"] as const,
+    health: () => [...queryKeys.admin.all, "health"] as const,
+    incidents: () => [...queryKeys.admin.all, "incidents"] as const,
+  },
+  shared: {
+    all: ["shared"] as const,
+    plan: (token: string) => [...queryKeys.shared.all, "plan", token] as const,
+  },
   submissions: {
     all: ["course-submissions"] as const,
     list: () => [...queryKeys.submissions.all, "list"] as const,
