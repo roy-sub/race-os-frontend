@@ -261,7 +261,7 @@ export function LegChart({
   const drawn = elevationPath(
     profile,
     { width, top: 12, bottom: height - 14 },
-    showcase ? { radius: 5, points: 22 } : {},
+    showcase ? { radius: 3, points: 22 } : {},
   );
   if (!drawn || profile.gain_m <= 0) {
     return (
@@ -418,7 +418,7 @@ export function ProfilePanel({
   const effective: PanelMode = mode === "BIKE" && !legs.BIKE ? "RACE" : mode;
 
   const single = effective === "BIKE" ? legs.BIKE : undefined;
-  const draw = showcase ? { radius: 5, points: 38 } : {};
+  const draw = showcase ? { radius: 4, points: 40 } : {};
   const drawn = useMemo(
     () =>
       effective === "RACE"

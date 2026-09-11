@@ -130,21 +130,47 @@ export function seriesPath(
 ): ElevationDrawing | null {
   if (!s_km.length || s_km.length !== h_m.length) return null;
 
-  // Roughly one sample per 18px of drawn width.
-  //
-  // This was one per 11px, which is where the remaining roughness lived: at
-  // that density each Bézier spans only a few pixels, so the curve is carrying
-  // the sample-to-sample jitter of the terrain rather than its shape, and the
-  // eye reads the result as faceted. Longer spans over a blurred series give a
-  // line that flows. The clamp keeps a tiny sparkline from losing its shape
-  // and a wide panel from paying for detail nobody can see.
+  // Roughly one sample per 18px of drawn width, so each cubic spans enough
+  // pixels to read as a curve rather than as a facet. Clamped so a tiny
+  // sparkline keeps its shape and a wide panel does not pay for detail nobody
+  // can see.
   const target = points ?? Math.max(26, Math.min(90, Math.round(box.width / 18)));
 
-  // Thin first, then blur. Blurring at full density and *then* thinning would
-  // put the noise back at the sample points that survive.
-  const thinned = smooth ? resample(s_km, h_m, Math.min(target, s_km.length)) : { s: s_km, h: h_m };
-  const heights = smooth ? smoothSeries(thinned.h, radius) : thinned.h;
-  const dists = thinned.s;
+  /*
+   * Low-pass **before** decimating, not after.
+   *
+   * This used to thin first and blur second, on the reasoning that blurring at
+   * full density and then thinning would put the noise back at the surviving
+   * samples. That reasoning is exactly wrong, and it was the last real source
+   * of roughness in these charts.
+   *
+   * `resample` point-samples: it interpolates at evenly-spaced targets and
+   * discards everything between them. Taking 240 terrain samples down to ~40
+   * that way, with no filter first, is textbook aliasing — energy above the new
+   * Nyquist limit folds *down* into the low frequencies and reappears as slow,
+   * broad wobble. Once that has happened it is indistinguishable from real
+   * shape, so no amount of blurring afterwards can take it out again; the
+   * post-blur was smoothing a signal that already had the artefact baked in.
+   *
+   * So: filter at source resolution with a kernel wide enough to cover the
+   * decimation window (the anti-aliasing filter), then decimate, then one light
+   * pass to polish the joins. Same three lines, correct order.
+   */
+  let dists = s_km;
+  let heights = h_m;
+  if (smooth) {
+    const count = Math.min(target, s_km.length);
+    const decimation = Math.max(1, s_km.length / count);
+    // Kernel scaled to the decimation factor: a radius of D spans 2D+1 source
+    // samples, so every source point contributes to the sample that replaces
+    // it and nothing above the new Nyquist limit survives to fold down.
+    const antiAliased = smoothSeries(h_m, Math.max(1, Math.round(decimation)));
+    const thinned = resample(s_km, antiAliased, count);
+    dists = thinned.s;
+    // A short second pass, purely cosmetic: it evens out the decimated series
+    // so the spline through it has no local kinks to honour.
+    heights = smoothSeries(thinned.h, radius);
+  }
 
   const first = dists[0] ?? 0;
   const maxS = (dists[dists.length - 1] ?? 1) - first || 1;
@@ -328,40 +354,39 @@ export function widestGapKm(stations: { leg: Leg; km: number }[], leg: Leg): num
 // ---------------------------------------------------------------------------
 
 /**
- * A **C2-continuous** cubic path through `points` — a natural cubic spline.
+ * A **C2-continuous, approximating** cubic path — a clamped uniform B-spline.
  *
- * The elevation chart used to be an `L`-segment polyline through every sample,
- * which at ~240 points across 800px put a vertex every three pixels and read as
- * a heart-rate trace rather than a landscape. Terrain is not spiky at that
- * scale; the spikes were sampling noise given equal weight to the real shape of
- * the course. `smoothSeries` removes that noise; this draws what is left.
+ * The chart began as an `L`-segment polyline through every sample, which at
+ * ~240 points across 800px put a vertex every three pixels and read as a
+ * heart-rate trace. Getting from there to a line that actually looks smooth
+ * took four corrections, and each one looked finished until it was magnified:
  *
- * It took three goes to get right, and the reasons are worth keeping because
- * each one looks like "smooth" until you magnify it:
+ * 1. **Halved Catmull-Rom tangents** kept the control points near their
+ *    anchors, so each segment was nearly straight and the polygon showed
+ *    through as faceting.
+ * 2. **Clamping control points into each segment's span** stopped overshoot but
+ *    broke the tangent match at every peak — arrive flat, leave with a corner.
+ * 3. **Plain Catmull-Rom** is C1: tangents match, so no corners, but curvature
+ *    still jumps at each anchor and reads as a shoulder — the line descends,
+ *    briefly flattens, descends again.
+ * 4. **A natural cubic spline** is C2, which removes the shoulders. It is also
+ *    an *interpolating* spline: it is forced through every control point, so
+ *    any small variation left in the series becomes a wiggle the curve is
+ *    obliged to honour. Smoothing the input harder barely helped, because the
+ *    oscillation was coming from the interpolation constraint rather than from
+ *    the data.
  *
- * 1. **Halved Catmull-Rom tangents** (`tension = 0.5`) put the control points
- *    close to their anchors, so every segment was nearly straight and the
- *    underlying polygon showed through as faceting.
- * 2. **Clamping each control point into its own segment's span** guaranteed no
- *    overshoot but broke the tangent match at every local maximum, so the curve
- *    arrived at each peak flat and left it with a corner.
- * 3. **Plain Catmull-Rom** fixes both of those and is C1 — the tangents match,
- *    so there are no corners at all. But curvature still jumps at each anchor,
- *    and at 6x magnification that reads as a shoulder: the line descends,
- *    briefly flattens, then descends again. No corner, and still not smooth.
+ * A uniform cubic B-spline drops that constraint. It is C2 like the natural
+ * spline, but it *approximates* its control polygon instead of passing through
+ * it — by the convex-hull property the curve cannot deviate further than the
+ * polygon itself, so it physically cannot oscillate between points. That is the
+ * quality the bell curves in a statistics textbook have, and it is what this
+ * draws now.
  *
- * A natural cubic spline is C2: position, tangent *and* curvature are all
- * continuous across every join, which is the mathematical statement of "you
- * cannot tell where one segment ends and the next begins". The first
- * derivatives come from solving a tridiagonal system (Thomas algorithm, O(n)),
- * with natural end conditions — zero second derivative at both ends, so the
- * line leaves and enters the frame without a flick.
- *
- * Overshoot is the trade for that continuity, and it is handled where it
- * belongs: `smoothSeries` runs first, so there are no spikes left to overshoot,
- * and `bounds` keeps the ink inside the panel regardless.
- *
- * `points` must be sorted by x and evenly spaced — `resample` guarantees both.
+ * The ends are clamped (first and last control points tripled) so the line
+ * still starts and finishes exactly on the data rather than floating short of
+ * it. Each span converts to one Bézier by the standard uniform-B-spline
+ * formulas, so the output is still an ordinary SVG path.
  */
 export function smoothPath(
   points: [number, number][],
@@ -377,66 +402,39 @@ export function smoothPath(
     );
   }
 
-  const y = points.map((point) => point[1]);
-  const h = (points[n - 1][0] - points[0][0]) / (n - 1) || 1;
+  // Clamp the ends by repeating them twice more, which pins the curve to the
+  // first and last samples without affecting anything in between.
+  const c: [number, number][] = [points[0], points[0], ...points, points[n - 1], points[n - 1]];
 
-  /*
-   * Solve for the first derivative at every knot.
-   *
-   * C2 continuity of a cubic through evenly-spaced knots gives, for each
-   * interior i:      d[i-1] + 4·d[i] + d[i+1] = 3·(y[i+1] − y[i−1]) / h
-   * and the natural end conditions (zero curvature at the ends):
-   *                  2·d[0] + d[1]           = 3·(y[1] − y[0]) / h
-   *                  d[n−2] + 2·d[n−1]       = 3·(y[n−1] − y[n−2]) / h
-   *
-   * That is tridiagonal, so it solves in one forward sweep and one back
-   * substitution rather than by inverting anything.
-   */
-  const sub = new Array<number>(n).fill(1);
-  const diag = new Array<number>(n).fill(4);
-  const sup = new Array<number>(n).fill(1);
-  const rhs = new Array<number>(n).fill(0);
-
-  diag[0] = 2;
-  sup[0] = 1;
-  rhs[0] = (3 * (y[1] - y[0])) / h;
-  for (let i = 1; i < n - 1; i++) rhs[i] = (3 * (y[i + 1] - y[i - 1])) / h;
-  sub[n - 1] = 1;
-  diag[n - 1] = 2;
-  rhs[n - 1] = (3 * (y[n - 1] - y[n - 2])) / h;
-
-  // Forward elimination.
-  for (let i = 1; i < n; i++) {
-    const factor = sub[i] / diag[i - 1];
-    diag[i] -= factor * sup[i - 1];
-    rhs[i] -= factor * rhs[i - 1];
-  }
-  // Back substitution.
-  const d = new Array<number>(n).fill(0);
-  d[n - 1] = rhs[n - 1] / diag[n - 1];
-  for (let i = n - 2; i >= 0; i--) d[i] = (rhs[i] - sup[i] * d[i + 1]) / diag[i];
-
-  // Only a guard against ink leaving the panel — never a per-segment clamp,
-  // which is what cornered an earlier version at its own peaks.
   const hold = (value: number) =>
     bounds ? Math.min(bounds[1], Math.max(bounds[0], value)) : value;
 
-  // Hermite -> Bézier: the controls sit a third of the span along each
-  // endpoint's own tangent.
+  // Uniform cubic B-spline span -> Bézier:
+  //   b0 = (P0 + 4·P1 + P2) / 6      b1 = (2·P1 + P2) / 3
+  //   b3 = (P1 + 4·P2 + P3) / 6      b2 = (P1 + 2·P2) / 3
+  // With the ends tripled, the first span's b0 evaluates to exactly `points[0]`
+  // — (P + 4P + P) / 6 — so the curve starts on the data rather than short of
+  // it. The same holds for the final b3 and the last point.
   const out = [`M${points[0][0].toFixed(3)} ${points[0][1].toFixed(3)}`];
-  for (let i = 0; i < n - 1; i++) {
-    const x1 = points[i][0];
-    const x2 = points[i + 1][0];
-    const span = x2 - x1;
-    const c1y = hold(y[i] + (d[i] * span) / 3);
-    const c2y = hold(y[i + 1] - (d[i + 1] * span) / 3);
-    // Three decimals. At 800 viewBox units across a chart this wide, rounding
-    // controls to 0.1 quantises the tangents enough to show as faint facets on
-    // a shallow gradient, and even 0.01 is measurable in the second derivative.
+
+  for (let i = 1; i + 2 < c.length; i++) {
+    const p1 = c[i];
+    const p2 = c[i + 1];
+    const p3 = c[i + 2];
+
+    const b1x = (2 * p1[0] + p2[0]) / 3;
+    const b1y = hold((2 * p1[1] + p2[1]) / 3);
+    const b2x = (p1[0] + 2 * p2[0]) / 3;
+    const b2y = hold((p1[1] + 2 * p2[1]) / 3);
+    const b3x = (p1[0] + 4 * p2[0] + p3[0]) / 6;
+    const b3y = hold((p1[1] + 4 * p2[1] + p3[1]) / 6);
+
+    // Three decimals: at 800 viewBox units across a chart this wide, rounding
+    // to 0.1 quantises the tangents enough to show as faint facets, and even
+    // 0.01 is measurable in the second derivative.
     out.push(
-      `C${(x1 + span / 3).toFixed(3)} ${c1y.toFixed(3)} ` +
-        `${(x1 + (span * 2) / 3).toFixed(3)} ${c2y.toFixed(3)} ` +
-        `${x2.toFixed(3)} ${y[i + 1].toFixed(3)}`,
+      `C${b1x.toFixed(3)} ${b1y.toFixed(3)} ${b2x.toFixed(3)} ${b2y.toFixed(3)} ` +
+        `${b3x.toFixed(3)} ${b3y.toFixed(3)}`,
     );
   }
   return out.join(" ");
