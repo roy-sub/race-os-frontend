@@ -17,7 +17,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { client, unwrap } from "@/lib/api/client";
 import { refreshAccessToken, setSignOutHandler } from "@/lib/api/http";
 import type { components } from "@/lib/api/schema";
-import { clearAccessToken, setAccessToken } from "@/lib/api/tokenStore";
+import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/api/tokenStore";
 
 export type User = components["schemas"]["UserOut"];
 
@@ -29,6 +29,8 @@ type AuthContextValue = {
   signIn: (input: { email: string; password: string }) => Promise<User>;
   signUp: (input: { email: string; password: string; name?: string }) => Promise<User>;
   signOut: () => Promise<void>;
+  /** Re-read `GET /auth/me`, after a change to the athlete's own record. */
+  refresh: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -77,12 +79,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [forgetSession]);
 
-  const adopt = useCallback((auth: components["schemas"]["AuthResponse"]) => {
-    setAccessToken(auth.access_token);
-    setUser(auth.user);
-    setStatus("authenticated");
-    return auth.user;
-  }, []);
+  const adopt = useCallback(
+    (auth: components["schemas"]["AuthResponse"]) => {
+      // Cleared on the way *in* as well as on the way out.
+      //
+      // Sign-out already drops the cache, but that is not enough on its own:
+      // a signed-out visitor browses the public directory and fills the cache
+      // as nobody, and a second athlete signing in on a shared machine after
+      // the first has closed the tab — or after a refresh that failed — would
+      // otherwise render whatever the previous session left behind for the
+      // instant before the refetch lands. Dropping it here means no query can
+      // outlive the identity it was fetched under.
+      queryClient.clear();
+      setAccessToken(auth.access_token);
+      setUser(auth.user);
+      setStatus("authenticated");
+      return auth.user;
+    },
+    [queryClient],
+  );
 
   const signIn = useCallback<AuthContextValue["signIn"]>(
     async (body) => adopt(await unwrap(client.POST("/api/v1/auth/login", { body }))),
@@ -99,6 +114,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [adopt],
   );
 
+  const refresh = useCallback(async () => {
+    // Only when someone is already signed in: calling it while anonymous
+    // would 401 and sign the (nobody) out, which is noise at best.
+    if (!getAccessToken()) return;
+    try {
+      setUser(await unwrap(client.GET("/api/v1/auth/me")));
+    } catch {
+      // A failed re-read is not evidence the session is gone — the 401 path
+      // in `apiFetch` handles that. Keep what we have rather than blanking a
+      // header mid-edit.
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     try {
       await client.POST("/api/v1/auth/logout");
@@ -110,8 +138,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [forgetSession]);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, status, signIn, signUp, signOut }),
-    [user, status, signIn, signUp, signOut],
+    () => ({ user, status, signIn, signUp, signOut, refresh }),
+    [user, status, signIn, signUp, signOut, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

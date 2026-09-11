@@ -232,7 +232,19 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Change your own details
+         * @description Whatever was sent, and nothing that was not.
+         *
+         *     ``exclude_unset`` matters more here than it looks: a settings form that
+         *     round-trips the whole object would wipe every field the screen does not
+         *     render, and the emergency contact is exactly the field a screen forgets.
+         *     Only keys the client actually sent are written.
+         *
+         *     The actor is the token's own user and there is no id parameter, so there is
+         *     no shape of request that edits somebody else.
+         */
+        patch: operations["update_me_api_v1_auth_me_patch"];
         trace?: never;
     };
     "/api/v1/courses": {
@@ -328,6 +340,35 @@ export interface paths {
          *     ``access.map_unlocked`` false and a reason rather than silently missing.
          */
         get: operations["get_recon_api_v1_courses__course_ref__recon_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{course_ref}/terrain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The 3D map's terrain field
+         * @description Everything the 3D course map needs, already in slab coordinates.
+         *
+         *     The browser does no geography: it receives a height grid, a water mask, a
+         *     distance-to-shore field and three route lines, all projected, scaled and
+         *     draped here. See :mod:`raceos.services.terrain_service` — and
+         *     ``course-map-3d/TRACKS.md`` §5-6, which is the specification this
+         *     implements.
+         *
+         *     Behind the same gate as the rest of the map. The showcase course is open
+         *     to everyone, because a marketing map nobody can see advertises nothing.
+         */
+        get: operations["get_terrain_api_v1_courses__course_ref__terrain_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3398,6 +3439,31 @@ export interface components {
             /** Amount Cents */
             amount_cents: number;
         };
+        /**
+         * ProfileUpdate
+         * @description What an athlete may change about themselves.
+         *
+         *     Deliberately excludes ``email`` and ``tier``. Changing an email is an
+         *     identity change and needs re-verification to be one — a field on a settings
+         *     form that silently moved someone's sign-in would be an account-takeover
+         *     primitive. Tier is what the billing system decided, so letting a client
+         *     send it would make the paywall a suggestion.
+         */
+        ProfileUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Date Of Birth */
+            date_of_birth?: string | null;
+            /** Country */
+            country?: string | null;
+            /** Emergency Contact Name */
+            emergency_contact_name?: string | null;
+            /** Emergency Contact Phone */
+            emergency_contact_phone?: string | null;
+            units?: components["schemas"]["UnitSystem"] | null;
+            level?: components["schemas"]["AthleteLevel"] | null;
+            currency?: components["schemas"]["Currency"] | null;
+        };
         /** PromoteRequest */
         PromoteRequest: {
             /**
@@ -4124,6 +4190,14 @@ export interface components {
             email_verified_at: string | null;
             /** Country */
             country: string | null;
+            /** Date Of Birth */
+            date_of_birth?: string | null;
+            /** Emergency Contact Name */
+            emergency_contact_name?: string | null;
+            /** Emergency Contact Phone */
+            emergency_contact_phone?: string | null;
+            /** Created At */
+            created_at?: string | null;
         };
         /**
          * UserTier
@@ -4513,6 +4587,41 @@ export interface operations {
             };
         };
     };
+    update_me_api_v1_auth_me_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_courses_api_v1_courses_get: {
         parameters: {
             query?: {
@@ -4647,6 +4756,39 @@ export interface operations {
         };
     };
     get_recon_api_v1_courses__course_ref__recon_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                course_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_terrain_api_v1_courses__course_ref__terrain_get: {
         parameters: {
             query?: never;
             header?: {

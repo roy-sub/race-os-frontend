@@ -566,6 +566,64 @@
             }
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Change your own details",
+        "description": "Whatever was sent, and nothing that was not.\n\n``exclude_unset`` matters more here than it looks: a settings form that\nround-trips the whole object would wipe every field the screen does not\nrender, and the emergency contact is exactly the field a screen forgets.\nOnly keys the client actually sent are written.\n\nThe actor is the token's own user and there is no id parameter, so there is\nno shape of request that edits somebody else.",
+        "operationId": "update_me_api_v1_auth_me_patch",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/courses": {
@@ -866,6 +924,66 @@
                 "schema": {
                   "type": "object",
                   "title": "Response Get Recon Api V1 Courses  Course Ref  Recon Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/courses/{course_ref}/terrain": {
+      "get": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "The 3D map's terrain field",
+        "description": "Everything the 3D course map needs, already in slab coordinates.\n\nThe browser does no geography: it receives a height grid, a water mask, a\ndistance-to-shore field and three route lines, all projected, scaled and\ndraped here. See :mod:`raceos.services.terrain_service` \u2014 and\n``course-map-3d/TRACKS.md`` \u00a75-6, which is the specification this\nimplements.\n\nBehind the same gate as the rest of the map. The showcase course is open\nto everyone, because a marketing map nobody can see advertises nothing.",
+        "operationId": "get_terrain_api_v1_courses__course_ref__terrain_get",
+        "parameters": [
+          {
+            "name": "course_ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Ref"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Get Terrain Api V1 Courses  Course Ref  Terrain Get"
                 }
               }
             }
@@ -10679,6 +10797,104 @@
         ],
         "title": "PriceOut"
       },
+      "ProfileUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "emergency_contact_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emergency Contact Name"
+          },
+          "emergency_contact_phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emergency Contact Phone"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnitSystem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AthleteLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Currency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProfileUpdate",
+        "description": "What an athlete may change about themselves.\n\nDeliberately excludes ``email`` and ``tier``. Changing an email is an\nidentity change and needs re-verification to be one \u2014 a field on a settings\nform that silently moved someone's sign-in would be an account-takeover\nprimitive. Tier is what the billing system decided, so letting a client\nsend it would make the paywall a suggestion."
+      },
       "PromoteRequest": {
         "properties": {
           "force": {
@@ -12800,6 +13016,52 @@
               }
             ],
             "title": "Country"
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
+          "emergency_contact_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emergency Contact Name"
+          },
+          "emergency_contact_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emergency Contact Phone"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
           }
         },
         "type": "object",

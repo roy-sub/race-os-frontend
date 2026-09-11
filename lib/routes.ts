@@ -2,6 +2,7 @@
 export const routes = {
   home: "/",
   races: "/races",
+  addRace: "/races/add",
   howItWorks: "/how-it-works",
   pricing: "/pricing",
   dashboard: "/dashboard",

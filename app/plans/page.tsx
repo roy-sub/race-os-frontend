@@ -1,279 +1,307 @@
 "use client";
 
-import { useState } from "react";
+/**
+ * My Plans — every race this athlete has entered, grouped as the API groups it.
+ *
+ * The grouping is the server's, not this screen's: `GET /my-plans` returns
+ * `active`, `draft` and `past` already separated, so the tab counts and the
+ * rows beneath them cannot disagree. Five hard-coded plans used to live in
+ * `lib/myPlans.ts` and every account read the same five; nothing here is a
+ * constant now.
+ */
+
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { AccountHeader } from "@/components/AccountHeader";
+import { Footer } from "@/components/Footer";
 import { Reveal } from "@/components/Reveal";
-import { routes } from "@/lib/routes";
-import { CARD_BLOCKS, EXPORTS, PLANS, type PlanState } from "@/lib/myPlans";
+import { Skeleton } from "@/components/Skeleton";
+import { ApiErrorState } from "@/components/ApiErrorState";
+import { routes, courseReconHref } from "@/lib/routes";
 import { GuardedPage } from "@/lib/auth/GuardedPage";
+import { formatDate, useMyPlans, type RaceCard } from "@/lib/api/account";
+import { EXPORTS, MARGIN_COLOR, PLAN_GROUPS, isSolved, marginState, type PlanGroup } from "@/lib/myPlans";
+import { feasStyle, planStatusLabel } from "@/lib/dashboard";
+import { downloadExport, useExportManifest } from "@/lib/api/exports";
 
-const HREF_MAP: Record<string, string> = {
-  racePlan: routes.racePlan,
-  planBuilder: routes.planBuilder,
-  postRace: routes.postRace,
+const CARD: React.CSSProperties = {
+  background: "#FBF8F2",
+  borderRadius: 12,
+  boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)",
 };
 
-const MARGIN_COLOR = { clear: "#3E7B55", tight: "#A0701A", none: "#A8A192" } as const;
+/**
+ * The export row, from the plan's own manifest.
+ *
+ * The manifest is what the server says this plan can produce, so a plan whose
+ * bike leg has no geometry does not offer a .fit for it. Offering a download
+ * that 404s is worse than not offering it.
+ */
+function ExportRow({ planId }: { planId: string }) {
+  const { data, isPending } = useExportManifest(planId);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
 
-const FILTERS = ["All", "Active", "Draft", "Past", "Shared"] as const;
-
-function MyPlansPage() {
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
-  const [query, setQuery] = useState("");
-  const [view, setView] = useState<"list" | "grid">("list");
-  const [cardIdx, setCardIdx] = useState<number | null>(null);
-  const [size, setSize] = useState<"A5" | "A4" | "Pocket">("A5");
-
-  const counts = {
-    All: PLANS.length,
-    Active: PLANS.filter((p) => p.state === "Active").length,
-    Draft: PLANS.filter((p) => p.state === "Draft").length,
-    Past: PLANS.filter((p) => p.state === "Past").length,
-    Shared: PLANS.filter((p) => p.shared).length,
-  };
-
-  let list = filter === "All" ? PLANS : filter === "Shared" ? PLANS.filter((p) => p.shared) : PLANS.filter((p) => p.state === (filter as PlanState));
-  if (query) list = list.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()));
-
-  const countLine = `${counts.Active} active · ${counts.Draft} draft · ${counts.Past} finished. Every plan you have solved stays yours permanently.`;
-  const card = cardIdx !== null ? PLANS[cardIdx] : null;
-
-  const emptyKicker = query ? "NO MATCHES" : filter === "Draft" ? "NO DRAFTS" : filter === "Past" ? "NOTHING RACED YET" : "NOTHING SHARED";
-  const emptyHead = query ? `Nothing matches "${query}".` : filter === "Past" ? "Your first finish will land here." : filter === "Draft" ? "No half-finished plans." : "You have not shared a plan yet.";
-  const emptySub = query
-    ? "Try a shorter search, or clear the filter to see all five plans."
-    : filter === "Past"
-      ? "After Sunday, upload your file and this becomes your race history with real numbers."
-      : filter === "Draft"
-        ? "Plans you start but do not solve are saved here automatically."
-        : "Share a plan with a coach and they can read it without an account.";
-  const emptyCta = query ? "Build a new plan" : "Build a plan";
-
-  const paperW = size === "A4" ? 620 : size === "Pocket" ? 360 : 500;
-  const printSpec = [
-    { k: "Paper", v: size === "A4" ? "A4 · 210×297" : size === "Pocket" ? "105×148" : "A5 · 148×210" },
-    { k: "Ink", v: "Monochrome" },
-    { k: "Minimum type", v: "7.5 pt" },
-    { k: "Fits one side", v: "Yes" },
-  ];
+  if (isPending) {
+    return (
+      <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+        {EXPORTS.slice(0, 4).map((e) => <Skeleton key={e.kind} width={120} height={34} />)}
+      </div>
+    );
+  }
+  const entries = data?.exports ?? [];
+  if (entries.length === 0) return null;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320 }}>
-      <AccountHeader active="myPlans" />
-
-      {cardIdx === null ? (
-        <div style={{ maxWidth: 1360, margin: "0 auto", padding: "44px 56px 96px" }}>
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 48 }}>
-            <div>
-              <Reveal as="h1" style={{ margin: 0, fontSize: 60, lineHeight: 0.96, fontWeight: 600, letterSpacing: "-.05em" }}>My plans</Reveal>
-              <Reveal as="p" delay={0.05} style={{ margin: "14px 0 0", fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>{countLine}</Reveal>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, height: 40, padding: "0 14px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 7, background: "#FBF8F2" }}>
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flex: "none" }}><circle cx="7" cy="7" r="4.6" stroke="#8C8578" strokeWidth={1.5} /><path d="M10.6 10.6 14 14" stroke="#8C8578" strokeWidth={1.5} strokeLinecap="round" /></svg>
-                <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search plans" style={{ width: 150, border: 0, background: "transparent", fontSize: 14, color: "#15140F", padding: 0, outline: "none" }} />
-              </div>
-              <div style={{ display: "flex", gap: 3, padding: 3, background: "rgba(21,20,15,.06)", borderRadius: 7 }}>
-                {[
-                  { k: "list" as const, icon: "M2 4h12M2 8h12M2 12h12" },
-                  { k: "grid" as const, icon: "M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z" },
-                ].map((v) => {
-                  const on = view === v.k;
-                  return (
-                    <span key={v.k} onClick={() => setView(v.k)} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34, height: 34, borderRadius: 5, cursor: "pointer", background: on ? "#FBF8F2" : "transparent" }}>
-                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d={v.icon} stroke={on ? "#15140F" : "#A8A192"} strokeWidth={1.5} strokeLinecap="round" /></svg>
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 30 }}>
-            {FILTERS.map((f) => {
-              const on = filter === f;
-              return (
-                <div key={f} onClick={() => setFilter(f)} className="row-hover-border" style={{ display: "flex", alignItems: "center", gap: 8, height: 34, padding: "0 13px", borderRadius: 6, cursor: "pointer", whiteSpace: "nowrap", background: on ? "#15140F" : "#FBF8F2", border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.12)"}` }}>
-                  <span style={{ fontSize: 13, fontWeight: on ? 600 : 500, letterSpacing: "-.01em", color: on ? "#FBF8F2" : "#5C574B" }}>{f}</span>
-                  <span className="mono" style={{ fontSize: 9.5, color: on ? "rgba(251,248,242,.5)" : "#A8A192" }}>{counts[f]}</span>
-                </div>
-              );
-            })}
-            <span className="mono" style={{ marginLeft: "auto", fontSize: 9, letterSpacing: ".13em", color: "#A8A192", whiteSpace: "nowrap" }}>SORTED BY RACE DATE</span>
-          </div>
-
-          {list.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 22 }}>
-              {list.map((p) => {
-                const idx = PLANS.indexOf(p);
-                return (
-                  <Reveal key={p.name} delay={idx * 0.06} style={{ background: "#FBF8F2", borderRadius: 12, padding: "24px 28px", boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.5fr) 200px 150px 1fr auto", gap: 26, alignItems: "center" }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.dot, flex: "none" }} />
-                          <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: p.statusFg, whiteSpace: "nowrap" }}>{p.status}</span>
-                          {p.shared && <span className="mono" style={{ fontSize: 8, letterSpacing: ".12em", padding: "2px 6px", borderRadius: 3, background: "rgba(21,20,15,.07)", color: "#5C574B", whiteSpace: "nowrap" }}>SHARED WITH COACH</span>}
-                        </div>
-                        <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-.033em", marginTop: 11, whiteSpace: "nowrap" }}>{p.name}</div>
-                        <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 13.5, color: "#8C8578", whiteSpace: "nowrap" }}>
-                          <span>{p.date}</span><span style={{ color: "#C4BCAC" }}>·</span><span>{p.place}</span><span style={{ color: "#C4BCAC" }}>·</span><span>{p.version}</span>
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>GOAL / PROJECTED</div>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 }}>
-                          <span className="mono" style={{ fontSize: 20, letterSpacing: "-.028em" }}>{p.goal}</span>
-                          <span className="mono" style={{ fontSize: 12, color: "#A8A192" }}>/ {p.proj}</span>
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>TIGHTEST</div>
-                        <div className="mono" style={{ fontSize: 20, letterSpacing: "-.028em", marginTop: 8, color: MARGIN_COLOR[p.marginState] }}>{p.margin}</div>
-                      </div>
-
-                      <div>
-                        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-                          <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>READINESS</span>
-                          <span className="mono" style={{ fontSize: 10, color: "#6B6455" }}>{p.ready}</span>
-                        </div>
-                        <div style={{ height: 4, borderRadius: 2, background: "rgba(21,20,15,.09)", marginTop: 11, position: "relative", overflow: "hidden" }}>
-                          <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: p.readyW, background: p.readyColor, borderRadius: 2 }} />
-                        </div>
-                        <div style={{ fontSize: 12, color: "#8C8578", marginTop: 8 }}>{p.readyNote}</div>
-                      </div>
-
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
-                        <Link href={HREF_MAP[p.href]} className="opacity-btn" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 40, padding: "0 17px", background: p.primary ? "#E4622F" : "transparent", color: p.primary ? "#fff" : "#15140F", border: `1px solid ${p.primary ? "#E4622F" : "rgba(21,20,15,.18)"}`, borderRadius: 6, fontSize: 13.5, fontWeight: 600 }}>{p.cta}</Link>
-                        <div onClick={() => setCardIdx(idx)} className="btn-outline-dark2" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, border: "1px solid rgba(21,20,15,.16)", borderRadius: 6, cursor: "pointer" }}>
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5" stroke="#5C574B" strokeWidth={1.4} /><path d="M5 5.5h6M5 8.5h6M5 11.5h3.5" stroke="#5C574B" strokeWidth={1.3} strokeLinecap="round" /></svg>
-                        </div>
-                        <div className="btn-outline-dark2 mono" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, border: "1px solid rgba(21,20,15,.16)", borderRadius: 6, cursor: "pointer", fontSize: 14, color: "#5C574B" }}>⋯</div>
-                      </div>
-                    </div>
-
-                    {p.alert && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 11, marginTop: 20, padding: "14px 16px", borderRadius: 8, background: "rgba(224,163,60,.09)", border: "1px solid rgba(224,163,60,.36)" }}>
-                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#C98A1F", flex: "none" }} />
-                        <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#C98A1F", whiteSpace: "nowrap" }}>{p.alertTag}</span>
-                        <span style={{ fontSize: 14, color: "#3D3A31" }}>{p.alertText}</span>
-                        <span className="mono link-accent" style={{ marginLeft: "auto", fontSize: 9, letterSpacing: ".12em", color: "#C6461B", cursor: "pointer", whiteSpace: "nowrap" }}>{p.alertCta}</span>
-                      </div>
-                    )}
-                  </Reveal>
-                );
-              })}
-            </div>
-          ) : (
-            <div style={{ marginTop: 22, padding: "80px 40px", background: "#FBF8F2", border: "1px dashed rgba(21,20,15,.2)", borderRadius: 12, textAlign: "center" }}>
-              <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>{emptyKicker}</div>
-              <div style={{ margin: "18px auto 0", maxWidth: 420, fontSize: 28, lineHeight: 1.15, fontWeight: 500, letterSpacing: "-.032em" }}>{emptyHead}</div>
-              <p style={{ margin: "12px auto 0", maxWidth: 400, fontSize: 15, lineHeight: 1.55, color: "#6B6455" }}>{emptySub}</p>
-              <Link href={routes.planBuilder} className="btn-dark-to-accent" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 48, padding: "0 26px", marginTop: 26, background: "#E4622F", color: "#fff", borderRadius: 7, fontSize: 15, fontWeight: 600 }}>{emptyCta}</Link>
-            </div>
-          )}
+    <div style={{ marginTop: 18 }}>
+      <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "#A8A192" }}>EXPORTS</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 11 }}>
+        {entries.map((entry) => (
+          <span
+            key={entry.key}
+            onClick={async () => {
+              setFailed(null);
+              setBusy(entry.key);
+              try {
+                await downloadExport(entry, data?.plan_version ?? 1);
+              } catch {
+                setFailed(entry.key);
+              } finally {
+                setBusy(null);
+              }
+            }}
+            className="row-hover-border"
+            title={entry.description}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 9, height: 34, padding: "0 13px",
+              border: `1px solid ${failed === entry.key ? "rgba(192,57,43,.4)" : "rgba(21,20,15,.14)"}`,
+              borderRadius: 6, cursor: busy ? "progress" : "pointer", background: "#fff",
+              fontSize: 13, color: failed === entry.key ? "#A03227" : "#15140F", whiteSpace: "nowrap",
+            }}
+          >
+            <span className="mono" style={{ fontSize: 9, letterSpacing: ".1em", color: "#A8A192" }}>
+              {entry.key.split(".").pop()?.toUpperCase() ?? "FILE"}
+            </span>
+            {busy === entry.key ? "Preparing…" : failed === entry.key ? "Failed — retry" : entry.label}
+          </span>
+        ))}
+      </div>
+      {data?.attribution && (
+        <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#B8B1A2", marginTop: 12 }}>
+          {data.attribution.toUpperCase()}
         </div>
-      ) : (
-        card && (
-          <div style={{ maxWidth: 1360, margin: "0 auto", padding: "32px 56px 88px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 40 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <div onClick={() => setCardIdx(null)} className="btn-outline-dark2" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, border: "1px solid rgba(21,20,15,.18)", borderRadius: 7, cursor: "pointer", flex: "none" }}>
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 3 5 8l5 5" stroke="#5C574B" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" /></svg>
-                </div>
-                <div>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#A8A192" }}>RACE CARD · {card.name}</div>
-                  <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-.033em", marginTop: 5 }}>Exactly as it prints</div>
-                </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ display: "flex", gap: 3, padding: 3, background: "rgba(21,20,15,.06)", borderRadius: 7 }}>
-                  {(["A5", "A4", "Pocket"] as const).map((z) => {
-                    const on = size === z;
-                    return (
-                      <span key={z} onClick={() => setSize(z)} className="mono" style={{ padding: "8px 13px", borderRadius: 5, cursor: "pointer", fontSize: 9.5, letterSpacing: ".12em", background: on ? "#15140F" : "transparent", color: on ? "#FBF8F2" : "#8C8578", whiteSpace: "nowrap" }}>{z}</span>
-                    );
-                  })}
-                </div>
-                <a href="#" className="btn-outline-dark2" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 40, padding: "0 17px", border: "1px solid rgba(21,20,15,.18)", borderRadius: 6, fontSize: 13.5, fontWeight: 600 }}>Download PDF</a>
-                <a href="#" className="btn-dark-to-accent" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 40, padding: "0 18px", background: "#E4622F", color: "#fff", borderRadius: 6, fontSize: 13.5, fontWeight: 600 }}>Print</a>
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 300px", gap: 22, marginTop: 28, alignItems: "start" }}>
-              <div style={{ background: "#EAE3D6", backgroundImage: "radial-gradient(rgba(21,20,15,.07) 1px, transparent 1px)", backgroundSize: "22px 22px", borderRadius: 14, padding: 40, display: "flex", justifyContent: "center" }}>
-                <div style={{ background: "#fff", borderRadius: 4, padding: "34px 36px", width: paperW, boxShadow: "0 30px 70px -34px rgba(21,20,15,.45)" }}>
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", paddingBottom: 15, borderBottom: "2px solid #15140F" }}>
-                    <div>
-                      <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-.03em" }}>{card.name.toUpperCase()}</div>
-                      <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".12em", color: "#5C574B", marginTop: 5 }}>{card.date.toUpperCase()} · 06:40 START · {card.place.toUpperCase()}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div className="mono" style={{ fontSize: 22, letterSpacing: "-.03em" }}>{card.goal}</div>
-                      <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#5C574B", marginTop: 5 }}>GOAL · {card.version.split(" · ")[0].toUpperCase()}</div>
-                    </div>
-                  </div>
-                  {CARD_BLOCKS.map((b) => (
-                    <div key={b.title} style={{ padding: "16px 0", borderBottom: "1px solid rgba(21,20,15,.18)" }}>
-                      <div className="mono" style={{ fontSize: 9, letterSpacing: ".16em", fontWeight: 500 }}>{b.title}</div>
-                      <div style={{ display: "grid", gridTemplateColumns: `repeat(${b.cols},1fr)`, gap: 12, marginTop: 12 }}>
-                        {b.rows.map((r) => (
-                          <div key={r.k}>
-                            <div className="mono" style={{ fontSize: 7.5, letterSpacing: ".12em", color: "#6B6455" }}>{r.k}</div>
-                            <div className="mono" style={{ fontSize: 14, marginTop: 4 }}>{r.v}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  <div className="mono" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 13, fontSize: 7.5, letterSpacing: ".12em", color: "#6B6455" }}>
-                    <span>RACEOS · BUNDLE v2026.2</span>
-                    <span>SWEAT RATE ESTIMATED · ALL ELSE MEASURED OR OFFICIAL</span>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ background: "#FBF8F2", borderRadius: 12, padding: "24px 26px", boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>PRINT SPEC</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
-                    {printSpec.map((s) => (
-                      <div key={s.k} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 14 }}>
-                        <span style={{ fontSize: 13.5, color: "#5C574B" }}>{s.k}</span>
-                        <span className="mono" style={{ fontSize: 12.5, textAlign: "right" }}>{s.v}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ background: "#FBF8F2", borderRadius: 12, padding: "24px 26px", boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>ALSO EXPORT</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
-                    {EXPORTS.map((x) => (
-                      <div key={x.ext} className="row-hover-border" style={{ display: "flex", alignItems: "center", gap: 11, height: 42, padding: "0 13px", border: "1px solid rgba(21,20,15,.14)", borderRadius: 7, cursor: "pointer", background: "#fff" }}>
-                        <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#A8A192", width: 32, flex: "none" }}>{x.ext}</span>
-                        <span style={{ fontSize: 13.5, fontWeight: 500, letterSpacing: "-.015em" }}>{x.name}</span>
-                        <span className="mono" style={{ marginLeft: "auto", fontSize: 12, color: "#E4622F" }}>↓</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ padding: "18px 20px", borderRadius: 11, background: "rgba(228,98,47,.07)", border: "1px solid rgba(228,98,47,.28)" }}>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#C6461B" }}>WHY MONOCHROME</div>
-                  <div style={{ fontSize: 13.5, lineHeight: 1.5, color: "#3D3A31", marginTop: 10 }}>This card gets read at hour nine in bright sun, wet, through a plastic sleeve. Colour coding fails all four. Nothing here depends on it.</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )
       )}
     </div>
   );
 }
 
-/** Signed-in only. Anonymous visitors are sent to log in and returned here after. */
+function PlanCard({ card, expanded, onToggle }: { card: RaceCard; expanded: boolean; onToggle: () => void }) {
+  const feas = feasStyle(card.feasibility);
+  const solved = isSolved(card);
+  const margin = marginState(card.worst_margin_minutes);
+
+  return (
+    <div style={{ ...CARD, padding: "26px 30px 28px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) repeat(3, 120px) auto", gap: 26, alignItems: "center" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: feas.dot, flex: "none" }} />
+            <span className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: feas.fg, whiteSpace: "nowrap" }}>
+              {planStatusLabel(card)}
+            </span>
+          </div>
+          <div style={{ fontSize: 23, fontWeight: 600, letterSpacing: "-.03em", marginTop: 9 }}>{card.course_name}</div>
+          <div style={{ fontSize: 13.5, color: "#8C8578", marginTop: 6 }}>
+            {formatDate(card.event_date)} · {card.course_place}
+            {card.solved_at ? ` · solved ${formatDate(card.solved_at)}` : ""}
+          </div>
+        </div>
+
+        <div>
+          <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>GOAL</div>
+          <div className="mono" style={{ fontSize: 16, marginTop: 8 }}>{card.goal_label ?? "—"}</div>
+        </div>
+        <div>
+          <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>PROJECTED</div>
+          <div className="mono" style={{ fontSize: 16, marginTop: 8 }}>{card.projected_label ?? "—"}</div>
+        </div>
+        <div>
+          <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>MARGIN</div>
+          <div className="mono" style={{ fontSize: 16, marginTop: 8, color: MARGIN_COLOR[margin] }}>
+            {card.margin_label ?? "—"}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 9, flex: "none" }}>
+          {solved && (
+            <span
+              onClick={onToggle}
+              className="row-hover-border"
+              style={{ display: "inline-flex", alignItems: "center", height: 42, padding: "0 16px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 6, fontSize: 13.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+            >
+              {expanded ? "Hide files" : "Files"}
+            </span>
+          )}
+          <Link
+            href={card.next_action_href || (card.plan_id ? `${routes.racePlan}?plan=${card.plan_id}` : routes.planBuilder)}
+            className="btn-dark-to-accent"
+            style={{ display: "inline-flex", alignItems: "center", height: 42, padding: "0 18px", background: solved ? "#15140F" : "#E4622F", color: solved ? "#F1EEE8" : "#fff", borderRadius: 6, fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap" }}
+          >
+            {card.next_action || (solved ? "Open plan" : "Build it")}
+          </Link>
+        </div>
+      </div>
+
+      {card.has_pending_drift && (
+        <div style={{ display: "flex", alignItems: "center", gap: 13, marginTop: 20, padding: "14px 16px", borderRadius: 9, background: "rgba(224,163,60,.09)", border: "1px solid rgba(224,163,60,.36)" }}>
+          <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#A0701A", flex: "none" }}>DRIFT</span>
+          <span style={{ fontSize: 14, lineHeight: 1.45, color: "#3D3A31", minWidth: 0 }}>
+            {card.drift_summary ?? "Something this plan depends on has moved. Your plan is untouched until you apply it."}
+          </span>
+          {card.plan_id && (
+            <Link href={`${routes.racePlan}?plan=${card.plan_id}`} className="mono link-accent" style={{ marginLeft: "auto", fontSize: 9, letterSpacing: ".12em", color: "#C6461B", flex: "none" }}>
+              REVIEW →
+            </Link>
+          )}
+        </div>
+      )}
+
+      {expanded && card.plan_id && <ExportRow planId={card.plan_id} />}
+
+      <div style={{ display: "flex", gap: 18, marginTop: 18 }}>
+        <Link href={courseReconHref(card.course_slug)} className="mono link-accent" style={{ fontSize: 9, letterSpacing: ".12em", color: "#8C8578" }}>
+          COURSE RECON →
+        </Link>
+        {card.shared && (
+          <span className="mono" style={{ fontSize: 9, letterSpacing: ".12em", color: "#8C8578" }}>SHARED</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EmptyGroup({ group }: { group: PlanGroup }) {
+  const copy: Record<PlanGroup, { title: string; body: string; cta?: { href: string; label: string } }> = {
+    active: {
+      title: "Nothing active.",
+      body: "A race becomes active the moment you enter it — before any plan is solved.",
+      cta: { href: routes.races, label: "Browse the calendar" },
+    },
+    draft: {
+      title: "No drafts.",
+      body: "A draft is a race you have entered but not yet solved a plan for.",
+    },
+    past: {
+      title: "No past races here yet.",
+      body: "After a race, its plan stays exactly as it was and moves to this list.",
+    },
+  };
+  const { title, body, cta } = copy[group];
+  return (
+    <div style={{ ...CARD, padding: "64px 40px", border: "1px dashed rgba(21,20,15,.2)", textAlign: "center", boxShadow: "none" }}>
+      <div style={{ fontSize: 24, fontWeight: 500, letterSpacing: "-.03em" }}>{title}</div>
+      <p style={{ margin: "12px auto 0", maxWidth: 420, fontSize: 15, lineHeight: 1.55, color: "#6B6455" }}>{body}</p>
+      {cta && (
+        <Link href={cta.href} className="btn-accent" style={{ display: "inline-flex", alignItems: "center", height: 46, padding: "0 24px", marginTop: 24, background: "#E4622F", color: "#fff", borderRadius: 7, fontSize: 15, fontWeight: 600 }}>
+          {cta.label}
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function MyPlansPage() {
+  const { data, isPending, error, refetch } = useMyPlans();
+  const [group, setGroup] = useState<PlanGroup>("active");
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const groups = useMemo(
+    () => ({ active: data?.active ?? [], draft: data?.draft ?? [], past: data?.past ?? [] }),
+    [data],
+  );
+  const rows = groups[group];
+  const totalEntered = groups.active.length + groups.draft.length + groups.past.length;
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320 }}>
+      <AccountHeader active="myPlans" />
+
+      <section style={{ maxWidth: 1360, margin: "0 auto", padding: "52px 56px 0" }}>
+        <Reveal className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>
+          {isPending ? "LOADING YOUR PLANS" : `${totalEntered} ${totalEntered === 1 ? "RACE" : "RACES"} ENTERED`}
+        </Reveal>
+        <Reveal as="h1" delay={0.05} style={{ margin: "16px 0 0", fontSize: 66, lineHeight: 0.94, fontWeight: 600, letterSpacing: "-.05em" }}>
+          My plans
+        </Reveal>
+        <Reveal as="p" delay={0.1} style={{ margin: "15px 0 0", maxWidth: 540, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>
+          Every race you have entered. A solved plan keeps its numbers exactly as they were until
+          you ask for a re-solve.
+        </Reveal>
+
+        <Reveal delay={0.14} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 30 }}>
+          {PLAN_GROUPS.map((g) => {
+            const on = group === g.key;
+            const count = groups[g.key].length;
+            return (
+              <div
+                key={g.key}
+                onClick={() => { setGroup(g.key); setExpanded(null); }}
+                className="row-hover-border"
+                style={{
+                  display: "flex", alignItems: "center", gap: 9, height: 38, padding: "0 15px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap",
+                  background: on ? "#15140F" : "#FBF8F2",
+                  border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.12)"}`,
+                  fontSize: 13.5, fontWeight: on ? 600 : 500, color: on ? "#FBF8F2" : "#5C574B",
+                }}
+              >
+                {g.name}
+                <span className="mono" style={{ fontSize: 10, color: on ? "rgba(251,248,242,.55)" : "#A8A192" }}>
+                  {isPending ? "—" : count}
+                </span>
+              </div>
+            );
+          })}
+          <span style={{ marginLeft: "auto", fontSize: 13.5, color: "#8C8578" }}>
+            {PLAN_GROUPS.find((g) => g.key === group)?.blurb}
+          </span>
+        </Reveal>
+      </section>
+
+      <section style={{ maxWidth: 1360, margin: "0 auto", padding: "24px 56px 0" }}>
+        {error ? (
+          <ApiErrorState error={error} onRetry={() => void refetch()} />
+        ) : isPending ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {[0, 1].map((i) => (
+              <div key={i} style={{ ...CARD, padding: "26px 30px" }}>
+                <Skeleton width={240} height={22} />
+                <div style={{ marginTop: 14 }}><Skeleton width={360} height={14} /></div>
+              </div>
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <EmptyGroup group={group} />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {rows.map((card) => (
+              <PlanCard
+                key={card.race_id}
+                card={card}
+                expanded={expanded === card.race_id}
+                onToggle={() => setExpanded((current) => (current === card.race_id ? null : card.race_id))}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div style={{ marginTop: 88 }}>
+        <Footer />
+      </div>
+    </div>
+  );
+}
+
 export default function GuardedMyPlansPage() {
   return (
     <GuardedPage>
