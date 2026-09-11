@@ -159,9 +159,26 @@ export function seriesPath(
   // it draws as the straight line it is.
   const spanH = maxH - minH || 1;
 
+  /*
+   * Plot into a slightly inset band rather than the full box.
+   *
+   * A C2 spline overshoots a little at a peak — that is the price of curvature
+   * continuity, and on a pre-blurred series it is only a few percent. Without
+   * headroom those control points hit the edge of the box and get clamped, and
+   * a clamp is a curvature break: measured on the live chart it fired exactly
+   * twice, at the highest peak and the lowest valley, which is precisely where
+   * the shoulder was visible under magnification.
+   *
+   * Giving the curve room to overshoot inside the panel means the guard below
+   * never fires, so the line stays C2 from end to end.
+   */
+  const headroom = (box.bottom - box.top) * 0.08;
+  const plotTop = box.top + headroom;
+  const plotBottom = box.bottom - headroom;
+
   const pts: [number, number][] = heights.map((height, i) => [
     ((dists[i] - first) / maxS) * box.width,
-    box.bottom - ((height - minH) / spanH) * (box.bottom - box.top),
+    plotBottom - ((height - minH) / spanH) * (plotBottom - plotTop),
   ]);
 
   const line = smooth
@@ -311,7 +328,7 @@ export function widestGapKm(stations: { leg: Leg; km: number }[], leg: Leg): num
 // ---------------------------------------------------------------------------
 
 /**
- * A C1-continuous cubic path through `points`.
+ * A **C2-continuous** cubic path through `points` — a natural cubic spline.
  *
  * The elevation chart used to be an `L`-segment polyline through every sample,
  * which at ~240 points across 800px put a vertex every three pixels and read as
@@ -319,57 +336,107 @@ export function widestGapKm(stations: { leg: Leg; km: number }[], leg: Leg): num
  * scale; the spikes were sampling noise given equal weight to the real shape of
  * the course. `smoothSeries` removes that noise; this draws what is left.
  *
- * **Why the first version still looked rough.** It did two things that each
- * flatten a curve back toward the polygon it came from:
+ * It took three goes to get right, and the reasons are worth keeping because
+ * each one looks like "smooth" until you magnify it:
  *
- * 1. It halved the Catmull-Rom tangents (`tension = 0.5`). The standard
- *    construction is `p1 + (p2 - p0) / 6`; at half that the control points sit
- *    close to their anchors, every segment is nearly a straight line, and the
- *    underlying polygon shows through.
- * 2. It clamped each control point into the span of its own two samples. That
- *    guarantees no overshoot, but it breaks the tangent match at every local
- *    maximum — so the curve arrived at each peak flat and left it with a
- *    corner, which is exactly where the eye goes.
+ * 1. **Halved Catmull-Rom tangents** (`tension = 0.5`) put the control points
+ *    close to their anchors, so every segment was nearly straight and the
+ *    underlying polygon showed through as faceting.
+ * 2. **Clamping each control point into its own segment's span** guaranteed no
+ *    overshoot but broke the tangent match at every local maximum, so the curve
+ *    arrived at each peak flat and left it with a corner.
+ * 3. **Plain Catmull-Rom** fixes both of those and is C1 — the tangents match,
+ *    so there are no corners at all. But curvature still jumps at each anchor,
+ *    and at 6x magnification that reads as a shoulder: the line descends,
+ *    briefly flattens, then descends again. No corner, and still not smooth.
  *
- * Full tangents and no per-segment clamp give a genuinely smooth line: the
- * control points either side of each anchor are collinear with it, so the curve
- * is C1 everywhere and the joins are invisible. Overshoot is handled at the
- * other end — `smoothSeries` runs first, so there are no spikes left to
- * overshoot — and `bounds` keeps the ink inside the panel regardless.
+ * A natural cubic spline is C2: position, tangent *and* curvature are all
+ * continuous across every join, which is the mathematical statement of "you
+ * cannot tell where one segment ends and the next begins". The first
+ * derivatives come from solving a tridiagonal system (Thomas algorithm, O(n)),
+ * with natural end conditions — zero second derivative at both ends, so the
+ * line leaves and enters the frame without a flick.
+ *
+ * Overshoot is the trade for that continuity, and it is handled where it
+ * belongs: `smoothSeries` runs first, so there are no spikes left to overshoot,
+ * and `bounds` keeps the ink inside the panel regardless.
+ *
+ * `points` must be sorted by x and evenly spaced — `resample` guarantees both.
  */
 export function smoothPath(
   points: [number, number][],
-  { tension = 1, bounds }: { tension?: number; bounds?: [number, number] } = {},
+  { bounds }: { bounds?: [number, number] } = {},
 ): string {
-  if (points.length === 0) return "";
-  if (points.length === 1) return `M${points[0][0].toFixed(2)} ${points[0][1].toFixed(2)}`;
+  const n = points.length;
+  if (n === 0) return "";
+  if (n === 1) return `M${points[0][0].toFixed(3)} ${points[0][1].toFixed(3)}`;
+  if (n === 2) {
+    return (
+      `M${points[0][0].toFixed(3)} ${points[0][1].toFixed(3)} ` +
+      `L${points[1][0].toFixed(3)} ${points[1][1].toFixed(3)}`
+    );
+  }
+
+  const y = points.map((point) => point[1]);
+  const h = (points[n - 1][0] - points[0][0]) / (n - 1) || 1;
+
+  /*
+   * Solve for the first derivative at every knot.
+   *
+   * C2 continuity of a cubic through evenly-spaced knots gives, for each
+   * interior i:      d[i-1] + 4·d[i] + d[i+1] = 3·(y[i+1] − y[i−1]) / h
+   * and the natural end conditions (zero curvature at the ends):
+   *                  2·d[0] + d[1]           = 3·(y[1] − y[0]) / h
+   *                  d[n−2] + 2·d[n−1]       = 3·(y[n−1] − y[n−2]) / h
+   *
+   * That is tridiagonal, so it solves in one forward sweep and one back
+   * substitution rather than by inverting anything.
+   */
+  const sub = new Array<number>(n).fill(1);
+  const diag = new Array<number>(n).fill(4);
+  const sup = new Array<number>(n).fill(1);
+  const rhs = new Array<number>(n).fill(0);
+
+  diag[0] = 2;
+  sup[0] = 1;
+  rhs[0] = (3 * (y[1] - y[0])) / h;
+  for (let i = 1; i < n - 1; i++) rhs[i] = (3 * (y[i + 1] - y[i - 1])) / h;
+  sub[n - 1] = 1;
+  diag[n - 1] = 2;
+  rhs[n - 1] = (3 * (y[n - 1] - y[n - 2])) / h;
+
+  // Forward elimination.
+  for (let i = 1; i < n; i++) {
+    const factor = sub[i] / diag[i - 1];
+    diag[i] -= factor * sup[i - 1];
+    rhs[i] -= factor * rhs[i - 1];
+  }
+  // Back substitution.
+  const d = new Array<number>(n).fill(0);
+  d[n - 1] = rhs[n - 1] / diag[n - 1];
+  for (let i = n - 2; i >= 0; i--) d[i] = (rhs[i] - sup[i] * d[i + 1]) / diag[i];
 
   // Only a guard against ink leaving the panel — never a per-segment clamp,
-  // which is what cornered the old curve at its own peaks.
-  const hold = (y: number) =>
-    bounds ? Math.min(bounds[1], Math.max(bounds[0], y)) : y;
+  // which is what cornered an earlier version at its own peaks.
+  const hold = (value: number) =>
+    bounds ? Math.min(bounds[1], Math.max(bounds[0], value)) : value;
 
-  const out = [`M${points[0][0].toFixed(2)} ${points[0][1].toFixed(2)}`];
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i === 0 ? 0 : i - 1];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[i + 2 >= points.length ? points.length - 1 : i + 2];
-
-    // Catmull-Rom tangents as Bézier control points. The two controls around
-    // each interior anchor are collinear with it, which is what makes the
-    // joins invisible.
-    const c1y = hold(p1[1] + ((p2[1] - p0[1]) / 6) * tension);
-    const c2y = hold(p2[1] - ((p3[1] - p1[1]) / 6) * tension);
-    const c1x = p1[0] + (p2[0] - p1[0]) / 3;
-    const c2x = p1[0] + ((p2[0] - p1[0]) * 2) / 3;
-
-    // Two decimals, not one: at 800 viewBox units across a chart this wide,
-    // rounding controls to 0.1 quantises the tangents just enough to show as
-    // faint facets along a shallow gradient.
+  // Hermite -> Bézier: the controls sit a third of the span along each
+  // endpoint's own tangent.
+  const out = [`M${points[0][0].toFixed(3)} ${points[0][1].toFixed(3)}`];
+  for (let i = 0; i < n - 1; i++) {
+    const x1 = points[i][0];
+    const x2 = points[i + 1][0];
+    const span = x2 - x1;
+    const c1y = hold(y[i] + (d[i] * span) / 3);
+    const c2y = hold(y[i + 1] - (d[i + 1] * span) / 3);
+    // Three decimals. At 800 viewBox units across a chart this wide, rounding
+    // controls to 0.1 quantises the tangents enough to show as faint facets on
+    // a shallow gradient, and even 0.01 is measurable in the second derivative.
     out.push(
-      `C${c1x.toFixed(2)} ${c1y.toFixed(2)} ${c2x.toFixed(2)} ${c2y.toFixed(2)} ` +
-        `${p2[0].toFixed(2)} ${p2[1].toFixed(2)}`,
+      `C${(x1 + span / 3).toFixed(3)} ${c1y.toFixed(3)} ` +
+        `${(x1 + (span * 2) / 3).toFixed(3)} ${c2y.toFixed(3)} ` +
+        `${x2.toFixed(3)} ${y[i + 1].toFixed(3)}`,
     );
   }
   return out.join(" ");
