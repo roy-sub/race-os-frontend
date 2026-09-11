@@ -19,12 +19,14 @@
     "next": "16.3.3",
     "openapi-fetch": "^0.13.8",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "three": "^0.160.1"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.160.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
     "openapi-typescript": "^7.13.0",

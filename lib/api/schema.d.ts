@@ -242,7 +242,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Race directory */
+        /**
+         * Race directory
+         * @description Public, and *narrower* when signed in rather than wider.
+         *
+         *     A signed-out visitor sees the marketing showcase alongside the season; a
+         *     signed-in athlete sees the season and their own submitted courses, and not
+         *     the showcase — see ``course_service.visible_to`` for why.
+         */
         get: operations["list_courses_api_v1_courses_get"];
         put?: never;
         post?: never;
@@ -311,12 +318,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Everything the free recon page shows
-         * @description Public and free, deliberately.
+         * Everything the recon page shows
+         * @description Public, with the map itself gated.
          *
-         *     The course library is the front door. Putting recon behind a paywall makes
-         *     the product impossible to evaluate, and no athlete data is involved here —
-         *     these numbers describe the course, not anyone racing it.
+         *     What a race is chosen on — where, how far, how much climbing, the tightest
+         *     cut-off — is free to everyone including signed-out visitors, because a
+         *     directory nobody can evaluate is not a front door. The surveyed geometry
+         *     and the furniture around it are part of the race plan, and arrive with
+         *     ``access.map_unlocked`` false and a reason rather than silently missing.
          */
         get: operations["get_recon_api_v1_courses__course_ref__recon_get"];
         put?: never;
@@ -345,6 +354,95 @@ export interface paths {
          *     enter is actually asking, without an account.
          */
         post: operations["cutoff_check_api_v1_courses__course_ref__cutoff_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/course-submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Races this athlete has added */
+        get: operations["list_submissions_api_v1_course_submissions_get"];
+        put?: never;
+        /**
+         * Start adding a race
+         * @description Describe the event. The route files follow, one call per leg.
+         */
+        post: operations["create_submission_api_v1_course_submissions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/course-submissions/{submission_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One submission, with its problems */
+        get: operations["get_submission_api_v1_course_submissions__submission_id__get"];
+        put?: never;
+        post?: never;
+        /** Remove a submission */
+        delete: operations["delete_submission_api_v1_course_submissions__submission_id__delete"];
+        options?: never;
+        head?: never;
+        /** Correct the details before submitting */
+        patch: operations["update_submission_api_v1_course_submissions__submission_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/course-submissions/{submission_id}/files/{leg}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upload the route file for one leg
+         * @description One leg's GPX.
+         *
+         *     Validated before it is stored, so an athlete who picked the wrong file is
+         *     told while the file picker is still in front of them rather than after all
+         *     three uploads and a build.
+         */
+        put: operations["upload_leg_file_api_v1_course_submissions__submission_id__files__leg__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/course-submissions/{submission_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build the course
+         * @description Run the ingest: resample, sample terrain, segment, and load.
+         *
+         *     Returns ``200`` whether the build succeeded or failed — a submission that
+         *     was rejected is a *state of the submission*, with its reasons attached,
+         *     not a failed request. The athlete's files are still there and replacing one
+         *     and re-submitting is the recovery path.
+         */
+        post: operations["submit_api_v1_course_submissions__submission_id__submit_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2268,6 +2366,15 @@ export interface components {
             /** Plan Id */
             plan_id?: string | null;
         };
+        /** Body_upload_leg_file_api_v1_course_submissions__submission_id__files__leg__put */
+        Body_upload_leg_file_api_v1_course_submissions__submission_id__files__leg__put: {
+            /**
+             * File
+             * Format: binary
+             * @description A GPX file for this leg
+             */
+            file: string;
+        };
         /**
          * BundleDetail
          * @description Everything the map, the elevation profile and the solver read.
@@ -2583,6 +2690,17 @@ export interface components {
             measured_at_temp_c?: number | null;
         };
         /**
+         * CourseAvailability
+         * @description Whether the directory row can actually be planned for yet.
+         *
+         *     A course is listed long before it is planable. Announcing the season and
+         *     then hiding fourteen of its fifteen events would be worse for an athlete
+         *     than saying plainly which one is ready — so a ``COMING_SOON`` row is real,
+         *     visible and honest, and it simply cannot be entered.
+         * @enum {string}
+         */
+        CourseAvailability: "available" | "coming_soon";
+        /**
          * CourseDetail
          * @description A course plus the summary of its active bundle.
          */
@@ -2616,6 +2734,31 @@ export interface components {
             lng: number;
             /** Is Fictional */
             is_fictional: boolean;
+            /** @default coming_soon */
+            availability: components["schemas"]["CourseAvailability"];
+            /** @default catalogue */
+            visibility: components["schemas"]["CourseVisibility"];
+            /** Next Edition Date */
+            next_edition_date?: string | null;
+            /** Official Event Name */
+            official_event_name?: string | null;
+            /**
+             * Is User Submitted
+             * @default false
+             */
+            is_user_submitted: boolean;
+            /**
+             * Map Unlocked
+             * @default false
+             */
+            map_unlocked: boolean;
+            /** Map Locked Reason */
+            map_locked_reason?: string | null;
+            /**
+             * Illustrative Map
+             * @default false
+             */
+            illustrative_map: boolean;
             /** Provenance */
             provenance?: string | null;
             /** Bundle Version */
@@ -2628,6 +2771,19 @@ export interface components {
             /** Legs */
             legs?: components["schemas"]["LegSummary"][];
         };
+        /**
+         * CourseVisibility
+         * @description Who a course is listed for.
+         *
+         *     The two values are not a permission model — nothing sensitive hides behind
+         *     them. They separate the *marketing* course, which exists to show a signed
+         *     out visitor what a race map looks like, from the *catalogue*, which is the
+         *     set of real events an athlete can plan for. Showing both to a signed-in
+         *     athlete would put an illustrative, deliberately out-of-scale map next to
+         *     the surveyed ones and invite them to be compared.
+         * @enum {string}
+         */
+        CourseVisibility: "catalogue" | "showcase" | "retired";
         /**
          * CrowdStatus
          * @enum {string}
@@ -3808,6 +3964,113 @@ export interface components {
             /** Split Label */
             split_label?: string | null;
         };
+        /**
+         * SubmissionCreate
+         * @description What an athlete types before they upload anything.
+         *
+         *     Coordinates are required because they anchor the DEM extract and the map's
+         *     default view; an athlete who does not know them can read them off the race
+         *     village pin on any map, which is a far smaller ask than tracing a course.
+         */
+        SubmissionCreate: {
+            /** Name */
+            name: string;
+            /** Place */
+            place: string;
+            /** Country */
+            country?: string | null;
+            /** Timezone */
+            timezone: string;
+            distance_type: components["schemas"]["DistanceType"];
+            /** Lat */
+            lat: number;
+            /** Lng */
+            lng: number;
+            /** Event Date */
+            event_date?: string | null;
+            /** Start Time Local */
+            start_time_local?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** SubmissionOut */
+        SubmissionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            status: components["schemas"]["SubmissionStatus"];
+            /** Name */
+            name: string;
+            /** Place */
+            place: string;
+            /** Country */
+            country: string | null;
+            /** Timezone */
+            timezone: string;
+            distance_type: components["schemas"]["DistanceType"];
+            /** Lat */
+            lat: number;
+            /** Lng */
+            lng: number;
+            /** Event Date */
+            event_date: string | null;
+            /** Start Time Local */
+            start_time_local: string | null;
+            /** Notes */
+            notes: string | null;
+            /** File Names */
+            file_names?: {
+                [key: string]: string;
+            };
+            /** Missing Legs */
+            missing_legs?: string[];
+            /** Problems */
+            problems?: string[];
+            /** Processed At */
+            processed_at?: string | null;
+            /** Course Id */
+            course_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * SubmissionStatus
+         * @description Where an athlete-submitted course has got to.
+         *
+         *     ``FAILED`` is a resting state, not an error the athlete has to clear: the
+         *     problems are attached to the row, the files they already uploaded are
+         *     still there, and re-submitting after replacing one file is the whole
+         *     recovery path.
+         * @enum {string}
+         */
+        SubmissionStatus: "draft" | "queued" | "processing" | "ready" | "failed";
+        /** SubmissionUpdate */
+        SubmissionUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Place */
+            place?: string | null;
+            /** Country */
+            country?: string | null;
+            /** Timezone */
+            timezone?: string | null;
+            distance_type?: components["schemas"]["DistanceType"] | null;
+            /** Lat */
+            lat?: number | null;
+            /** Lng */
+            lng?: number | null;
+            /** Event Date */
+            event_date?: string | null;
+            /** Start Time Local */
+            start_time_local?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
         /** SupportRequest */
         SupportRequest: {
             /**
@@ -4260,7 +4523,9 @@ export interface operations {
                 limit?: number;
                 offset?: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -4289,7 +4554,9 @@ export interface operations {
     get_course_api_v1_courses__course_ref__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 course_ref: string;
             };
@@ -4382,7 +4649,9 @@ export interface operations {
     get_recon_api_v1_courses__course_ref__recon_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 course_ref: string;
             };
@@ -4432,6 +4701,245 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_submissions_api_v1_course_submissions_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_submission_api_v1_course_submissions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmissionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_submission_api_v1_course_submissions__submission_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_submission_api_v1_course_submissions__submission_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_submission_api_v1_course_submissions__submission_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmissionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_leg_file_api_v1_course_submissions__submission_id__files__leg__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                submission_id: string;
+                /** @description SWIM, BIKE or RUN */
+                leg: components["schemas"]["Leg"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_leg_file_api_v1_course_submissions__submission_id__files__leg__put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_api_v1_course_submissions__submission_id__submit_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionOut"];
                 };
             };
             /** @description Validation Error */

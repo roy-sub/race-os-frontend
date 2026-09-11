@@ -42,5 +42,20 @@ export const queryKeys = {
     entitlements: (raceId?: string | null) =>
       [...queryKeys.billing.all, "entitlements", raceId ?? null] as const,
     prices: () => [...queryKeys.billing.all, "prices"] as const,
+    invoices: () => [...queryKeys.billing.all, "invoices"] as const,
+  },
+  dashboard: {
+    all: ["dashboard"] as const,
+  },
+  notifications: {
+    all: ["notifications"] as const,
+    list: (params: { unread?: boolean; limit?: number; offset?: number } = {}) =>
+      [...queryKeys.notifications.all, "list", params] as const,
+    preferences: () => [...queryKeys.notifications.all, "preferences"] as const,
+  },
+  submissions: {
+    all: ["course-submissions"] as const,
+    list: () => [...queryKeys.submissions.all, "list"] as const,
+    detail: (id: string) => [...queryKeys.submissions.all, "detail", id] as const,
   },
 } as const;

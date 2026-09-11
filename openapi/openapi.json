@@ -574,6 +574,7 @@
           "courses"
         ],
         "summary": "Race directory",
+        "description": "Public, and *narrower* when signed in rather than wider.\n\nA signed-out visitor sees the marketing showcase alongside the season; a\nsigned-in athlete sees the season and their own submitted courses, and not\nthe showcase \u2014 see ``course_service.visible_to`` for why.",
         "operationId": "list_courses_api_v1_courses_get",
         "parameters": [
           {
@@ -634,6 +635,22 @@
               "default": 0,
               "title": "Offset"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -675,6 +692,22 @@
             "schema": {
               "type": "string",
               "title": "Course Ref"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -795,8 +828,8 @@
         "tags": [
           "courses"
         ],
-        "summary": "Everything the free recon page shows",
-        "description": "Public and free, deliberately.\n\nThe course library is the front door. Putting recon behind a paywall makes\nthe product impossible to evaluate, and no athlete data is involved here \u2014\nthese numbers describe the course, not anyone racing it.",
+        "summary": "Everything the recon page shows",
+        "description": "Public, with the map itself gated.\n\nWhat a race is chosen on \u2014 where, how far, how much climbing, the tightest\ncut-off \u2014 is free to everyone including signed-out visitors, because a\ndirectory nobody can evaluate is not a front door. The surveyed geometry\nand the furniture around it are part of the race plan, and arrive with\n``access.map_unlocked`` false and a reason rather than silently missing.",
         "operationId": "get_recon_api_v1_courses__course_ref__recon_get",
         "parameters": [
           {
@@ -806,6 +839,22 @@
             "schema": {
               "type": "string",
               "title": "Course Ref"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -871,6 +920,433 @@
                 "schema": {
                   "type": "object",
                   "title": "Response Cutoff Check Api V1 Courses  Course Ref  Cutoff Check Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/course-submissions": {
+      "post": {
+        "tags": [
+          "course submissions"
+        ],
+        "summary": "Start adding a race",
+        "description": "Describe the event. The route files follow, one call per leg.",
+        "operationId": "create_submission_api_v1_course_submissions_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "course submissions"
+        ],
+        "summary": "Races this athlete has added",
+        "operationId": "list_submissions_api_v1_course_submissions_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SubmissionOut"
+                  },
+                  "title": "Response List Submissions Api V1 Course Submissions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/course-submissions/{submission_id}": {
+      "get": {
+        "tags": [
+          "course submissions"
+        ],
+        "summary": "One submission, with its problems",
+        "operationId": "get_submission_api_v1_course_submissions__submission_id__get",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "course submissions"
+        ],
+        "summary": "Correct the details before submitting",
+        "operationId": "update_submission_api_v1_course_submissions__submission_id__patch",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "course submissions"
+        ],
+        "summary": "Remove a submission",
+        "operationId": "delete_submission_api_v1_course_submissions__submission_id__delete",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/course-submissions/{submission_id}/files/{leg}": {
+      "put": {
+        "tags": [
+          "course submissions"
+        ],
+        "summary": "Upload the route file for one leg",
+        "description": "One leg's GPX.\n\nValidated before it is stored, so an athlete who picked the wrong file is\ntold while the file picker is still in front of them rather than after all\nthree uploads and a build.",
+        "operationId": "upload_leg_file_api_v1_course_submissions__submission_id__files__leg__put",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "leg",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Leg",
+              "description": "SWIM, BIKE or RUN"
+            },
+            "description": "SWIM, BIKE or RUN"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_leg_file_api_v1_course_submissions__submission_id__files__leg__put"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/course-submissions/{submission_id}/submit": {
+      "post": {
+        "tags": [
+          "course submissions"
+        ],
+        "summary": "Build the course",
+        "description": "Run the ingest: resample, sample terrain, segment, and load.\n\nReturns ``200`` whether the build succeeded or failed \u2014 a submission that\nwas rejected is a *state of the submission*, with its reasons attached,\nnot a failed request. The athlete's files are still there and replacing one\nand re-submitting is the recovery path.",
+        "operationId": "submit_api_v1_course_submissions__submission_id__submit_post",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionOut"
                 }
               }
             }
@@ -7280,6 +7756,21 @@
         ],
         "title": "Body_upload_file_api_v1_post_race_files_post"
       },
+      "Body_upload_leg_file_api_v1_course_submissions__submission_id__files__leg__put": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File",
+            "description": "A GPX file for this leg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_leg_file_api_v1_course_submissions__submission_id__files__leg__put"
+      },
       "BundleDetail": {
         "properties": {
           "id": {
@@ -8213,6 +8704,15 @@
         ],
         "title": "ConstraintWrite"
       },
+      "CourseAvailability": {
+        "type": "string",
+        "enum": [
+          "available",
+          "coming_soon"
+        ],
+        "title": "CourseAvailability",
+        "description": "Whether the directory row can actually be planned for yet.\n\nA course is listed long before it is planable. Announcing the season and\nthen hiding fourteen of its fifteen events would be worse for an athlete\nthan saying plainly which one is ready \u2014 so a ``COMING_SOON`` row is real,\nvisible and honest, and it simply cannot be entered."
+      },
       "CourseDetail": {
         "properties": {
           "id": {
@@ -8298,6 +8798,63 @@
             "type": "boolean",
             "title": "Is Fictional"
           },
+          "availability": {
+            "$ref": "#/components/schemas/CourseAvailability",
+            "default": "coming_soon"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/CourseVisibility",
+            "default": "catalogue"
+          },
+          "next_edition_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Edition Date"
+          },
+          "official_event_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Official Event Name"
+          },
+          "is_user_submitted": {
+            "type": "boolean",
+            "title": "Is User Submitted",
+            "default": false
+          },
+          "map_unlocked": {
+            "type": "boolean",
+            "title": "Map Unlocked",
+            "default": false
+          },
+          "map_locked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Map Locked Reason"
+          },
+          "illustrative_map": {
+            "type": "boolean",
+            "title": "Illustrative Map",
+            "default": false
+          },
           "provenance": {
             "anyOf": [
               {
@@ -8379,6 +8936,16 @@
         ],
         "title": "CourseDetail",
         "description": "A course plus the summary of its active bundle."
+      },
+      "CourseVisibility": {
+        "type": "string",
+        "enum": [
+          "catalogue",
+          "showcase",
+          "retired"
+        ],
+        "title": "CourseVisibility",
+        "description": "Who a course is listed for.\n\nThe two values are not a permission model \u2014 nothing sensitive hides behind\nthem. They separate the *marketing* course, which exists to show a signed\nout visitor what a race map looks like, from the *catalogue*, which is the\nset of real events an athlete can plan for. Showing both to a signed-in\nathlete would put an illustrative, deliberately out-of-scale map next to\nthe surveyed ones and invite them to be compared."
       },
       "CrowdStatus": {
         "type": "string",
@@ -11734,6 +12301,391 @@
           "note"
         ],
         "title": "SplitOut"
+      },
+      "SubmissionCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 3,
+            "title": "Name"
+          },
+          "place": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 2,
+            "title": "Place"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "timezone": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 3,
+            "title": "Timezone"
+          },
+          "distance_type": {
+            "$ref": "#/components/schemas/DistanceType"
+          },
+          "lat": {
+            "type": "number",
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat"
+          },
+          "lng": {
+            "type": "number",
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lng"
+          },
+          "event_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Date"
+          },
+          "start_time_local": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time Local"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "place",
+          "timezone",
+          "distance_type",
+          "lat",
+          "lng"
+        ],
+        "title": "SubmissionCreate",
+        "description": "What an athlete types before they upload anything.\n\nCoordinates are required because they anchor the DEM extract and the map's\ndefault view; an athlete who does not know them can read them off the race\nvillage pin on any map, which is a far smaller ask than tracing a course."
+      },
+      "SubmissionOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubmissionStatus"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "place": {
+            "type": "string",
+            "title": "Place"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "distance_type": {
+            "$ref": "#/components/schemas/DistanceType"
+          },
+          "lat": {
+            "type": "number",
+            "title": "Lat"
+          },
+          "lng": {
+            "type": "number",
+            "title": "Lng"
+          },
+          "event_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Date"
+          },
+          "start_time_local": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time Local"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "file_names": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "File Names"
+          },
+          "missing_legs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Legs"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Problems"
+          },
+          "processed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processed At"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "name",
+          "place",
+          "country",
+          "timezone",
+          "distance_type",
+          "lat",
+          "lng",
+          "event_date",
+          "start_time_local",
+          "notes",
+          "created_at"
+        ],
+        "title": "SubmissionOut"
+      },
+      "SubmissionStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "queued",
+          "processing",
+          "ready",
+          "failed"
+        ],
+        "title": "SubmissionStatus",
+        "description": "Where an athlete-submitted course has got to.\n\n``FAILED`` is a resting state, not an error the athlete has to clear: the\nproblems are attached to the row, the files they already uploaded are\nstill there, and re-submitting after replacing one file is the whole\nrecovery path."
+      },
+      "SubmissionUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          },
+          "distance_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DistanceType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 90.0,
+                "minimum": -90.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lng": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 180.0,
+                "minimum": -180.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lng"
+          },
+          "event_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Date"
+          },
+          "start_time_local": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time Local"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "title": "SubmissionUpdate"
       },
       "SupportRequest": {
         "properties": {
