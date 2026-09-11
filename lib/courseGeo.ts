@@ -88,13 +88,66 @@ export function projectLegs(
 export function elevationPath(
   profile: ReconElevationLeg,
   box: { width: number; top: number; bottom: number },
-): { line: string; area: string; minH: number; maxH: number } | null {
-  const { s_km: s, h_m: h } = profile.display;
-  if (!s?.length || !h?.length || s.length !== h.length) return null;
+  options: { smooth?: boolean; points?: number; radius?: number } = {},
+): ElevationDrawing | null {
+  const { s_km, h_m } = profile.display;
+  if (!s_km?.length || !h_m?.length || s_km.length !== h_m.length) return null;
+  return seriesPath(s_km, h_m, box, options);
+}
 
-  const maxS = s[s.length - 1] || 1;
-  let minH = Infinity, maxH = -Infinity;
-  for (const v of h) {
+/** What a drawn profile hands back: two paths, the height band, and the samples. */
+export type ElevationDrawing = {
+  line: string;
+  area: string;
+  minH: number;
+  maxH: number;
+  /** The drawn samples, so a caller can place markers on the same curve. */
+  points: [number, number][];
+  /** Distance in km at each drawn sample, parallel to `points`. */
+  atKm: number[];
+};
+
+/**
+ * The shared drawing routine, over any distance/height pair.
+ *
+ * Separate from `elevationPath` so the whole-race profile — three legs
+ * concatenated onto one axis — draws through exactly the same code as a single
+ * leg, rather than through a second implementation that could drift from it.
+ *
+ * The vertical scale is taken from the series itself rather than from zero,
+ * because a 2,238 m bike profile and a 275 m run profile drawn on a shared axis
+ * would render the run as a flat line.
+ */
+export function seriesPath(
+  s_km: number[],
+  h_m: number[],
+  box: { width: number; top: number; bottom: number },
+  {
+    smooth = true,
+    points,
+    radius = 2,
+  }: { smooth?: boolean; points?: number; radius?: number } = {},
+): ElevationDrawing | null {
+  if (!s_km.length || s_km.length !== h_m.length) return null;
+
+  // Roughly one sample per 11px of drawn width. Denser than that and the
+  // curve starts carrying sampling noise again; sparser and a real climb
+  // gets rounded off. Clamped so a tiny sparkline still has enough points to
+  // have a shape, and a very wide panel does not pay for detail nobody sees.
+  const target = points ?? Math.max(40, Math.min(140, Math.round(box.width / 11)));
+
+  // Thin first, then blur. Blurring at full density and *then* thinning would
+  // put the noise back at the sample points that survive.
+  const thinned = smooth ? resample(s_km, h_m, Math.min(target, s_km.length)) : { s: s_km, h: h_m };
+  const heights = smooth ? smoothSeries(thinned.h, radius) : thinned.h;
+  const dists = thinned.s;
+
+  const first = dists[0] ?? 0;
+  const maxS = (dists[dists.length - 1] ?? 1) - first || 1;
+
+  let minH = Infinity;
+  let maxH = -Infinity;
+  for (const v of heights) {
     if (v < minH) minH = v;
     if (v > maxH) maxH = v;
   }
@@ -102,19 +155,76 @@ export function elevationPath(
   // it draws as the straight line it is.
   const spanH = maxH - minH || 1;
 
-  const line = s
-    .map((sk, i) => {
-      const x = (sk / maxS) * box.width;
-      const y = box.bottom - ((h[i] - minH) / spanH) * (box.bottom - box.top);
-      return `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
-    .join(" ");
+  const pts: [number, number][] = heights.map((height, i) => [
+    ((dists[i] - first) / maxS) * box.width,
+    box.bottom - ((height - minH) / spanH) * (box.bottom - box.top),
+  ]);
+
+  const line = smooth
+    ? smoothPath(pts)
+    : pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
 
   return {
     line,
     area: `${line} L ${box.width.toFixed(1)} ${box.bottom} L 0 ${box.bottom} Z`,
     minH,
     maxH,
+    points: pts,
+    atKm: dists,
+  };
+}
+
+/**
+ * Three legs on one axis: the whole race, start line to finish.
+ *
+ * Distance is cumulative, so the bike picks up where the swim ended and the run
+ * where the bike did. Height is **not** renormalised per leg — the point of the
+ * whole-race view is that the legs are finally comparable, and rescaling each
+ * one would destroy exactly that.
+ *
+ * Returns the x offset where each leg begins, so the chart can band and label
+ * them without recomputing the same arithmetic a second way.
+ */
+export function racePath(
+  legs: Partial<Record<Leg, ReconElevationLeg>>,
+  box: { width: number; top: number; bottom: number },
+  options: { smooth?: boolean; points?: number; radius?: number } = {},
+): (ElevationDrawing & { bands: { leg: Leg; fromX: number; toX: number }[] }) | null {
+  const ordered = (["SWIM", "BIKE", "RUN"] as Leg[])
+    .map((leg) => ({ leg, profile: legs[leg] }))
+    .filter((row): row is { leg: Leg; profile: ReconElevationLeg } => Boolean(row.profile));
+  if (!ordered.length) return null;
+
+  const s: number[] = [];
+  const h: number[] = [];
+  const spans: { leg: Leg; fromKm: number; toKm: number }[] = [];
+  let offset = 0;
+
+  for (const { leg, profile } of ordered) {
+    const ls = profile.display.s_km ?? [];
+    const lh = profile.display.h_m ?? [];
+    if (!ls.length || ls.length !== lh.length) continue;
+    const fromKm = offset;
+    for (let i = 0; i < ls.length; i++) {
+      s.push(offset + ls[i]);
+      h.push(lh[i]);
+    }
+    offset += ls[ls.length - 1] || profile.distance_m / 1000;
+    spans.push({ leg, fromKm, toKm: offset });
+  }
+  if (s.length < 2) return null;
+
+  const drawing = seriesPath(s, h, box, options);
+  if (!drawing) return null;
+
+  const total = offset || 1;
+  return {
+    ...drawing,
+    bands: spans.map((span) => ({
+      leg: span.leg,
+      fromX: (span.fromKm / total) * box.width,
+      toX: (span.toKm / total) * box.width,
+    })),
   };
 }
 
@@ -190,4 +300,109 @@ export function widestGapKm(stations: { leg: Leg; km: number }[], leg: Leg): num
   let widest = 0;
   for (let i = 1; i < kms.length; i++) widest = Math.max(widest, kms[i] - kms[i - 1]);
   return widest;
+}
+
+// ---------------------------------------------------------------------------
+// Smooth curves
+// ---------------------------------------------------------------------------
+
+/**
+ * A monotone cubic path through `points`.
+ *
+ * The elevation chart used to be an `L`-segment polyline through every sample,
+ * which at ~240 points across 800px put a vertex every three pixels and read as
+ * a heart-rate trace rather than a landscape. Terrain is not spiky at that
+ * scale; the spikes were sampling noise given equal weight to the real shape of
+ * the course.
+ *
+ * Two things fix it, and both are needed. `smoothSeries` removes the noise
+ * before anything is drawn, and this draws what is left as curves rather than
+ * corners. The tangents are clamped Catmull-Rom (Fritsch–Carlson): where three
+ * consecutive points are monotonic the curve is too, so a smoothed climb never
+ * dips below its own data on the way up — the artefact that makes a naive
+ * spline look wrong to anyone who knows the course.
+ */
+export function smoothPath(points: [number, number][], tension = 0.5): string {
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
+
+  const out = [`M${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`];
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i === 0 ? 0 : i - 1];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2 >= points.length ? points.length - 1 : i + 2];
+
+    // Catmull-Rom tangents, scaled to Bézier control points.
+    let c1y = p1[1] + ((p2[1] - p0[1]) / 6) * tension;
+    let c2y = p2[1] - ((p3[1] - p1[1]) / 6) * tension;
+
+    // Monotone clamp: never let a control point leave the span its own two
+    // samples define, so the curve cannot overshoot into a dip or a spike
+    // that the data does not contain.
+    const lo = Math.min(p1[1], p2[1]);
+    const hi = Math.max(p1[1], p2[1]);
+    c1y = Math.min(hi, Math.max(lo, c1y));
+    c2y = Math.min(hi, Math.max(lo, c2y));
+
+    const c1x = p1[0] + (p2[0] - p1[0]) / 3;
+    const c2x = p1[0] + ((p2[0] - p1[0]) * 2) / 3;
+    out.push(
+      `C${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ` +
+        `${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`,
+    );
+  }
+  return out.join(" ");
+}
+
+/**
+ * A Gaussian blur along a series, with the ends held.
+ *
+ * `radius` is in samples. Reflecting at the boundary rather than clamping keeps
+ * the first and last few points from being dragged toward the interior, which
+ * is what makes a naively-smoothed profile appear to start mid-climb.
+ */
+export function smoothSeries(values: number[], radius: number): number[] {
+  if (radius < 1 || values.length < 3) return values;
+  const sigma = radius / 2;
+  const weights: number[] = [];
+  for (let i = -radius; i <= radius; i++) weights.push(Math.exp(-(i * i) / (2 * sigma * sigma)));
+  const total = weights.reduce((a, b) => a + b, 0);
+
+  return values.map((_, i) => {
+    let sum = 0;
+    for (let k = -radius; k <= radius; k++) {
+      let j = i + k;
+      // Reflect at both ends.
+      if (j < 0) j = -j;
+      if (j >= values.length) j = 2 * (values.length - 1) - j;
+      sum += values[Math.max(0, Math.min(values.length - 1, j))] * weights[k + radius];
+    }
+    return sum / total;
+  });
+}
+
+/**
+ * Resample a series to `count` evenly-spaced points by linear interpolation.
+ *
+ * Drawing 240 Bézier segments to fill 800 pixels is wasted work and reintroduces
+ * the very jitter the smoothing removed. Sixty to eighty points is where a
+ * terrain profile stops gaining shape and starts gaining noise.
+ */
+export function resample(s: number[], h: number[], count: number): { s: number[]; h: number[] } {
+  if (s.length < 2 || count < 2) return { s, h };
+  const first = s[0];
+  const last = s[s.length - 1];
+  const span = last - first || 1;
+  const outS: number[] = [];
+  const outH: number[] = [];
+  let j = 0;
+  for (let i = 0; i < count; i++) {
+    const target = first + (span * i) / (count - 1);
+    while (j < s.length - 2 && s[j + 1] < target) j++;
+    const t = s[j + 1] === s[j] ? 0 : (target - s[j]) / (s[j + 1] - s[j]);
+    outS.push(target);
+    outH.push(h[j] + (h[j + 1] - h[j]) * Math.max(0, Math.min(1, t)));
+  }
+  return { s: outS, h: outH };
 }

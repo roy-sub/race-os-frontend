@@ -77,7 +77,18 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
 
   const go = (m: Mode) => { setMode(m); setBusy(false); setError(null); };
 
-  const submit = async () => {
+  /**
+   * Submit, from a real form.
+   *
+   * This used to be wired to `<div onClick={submit}>` with no `<form>` around
+   * the fields, which meant the single most common way anyone signs in — type
+   * the password, press Enter — did nothing at all, and the button could not be
+   * reached by keyboard or announced by a screen reader. It is a `<form>` and a
+   * `<button type="submit">` now, so Enter works because the platform makes it
+   * work rather than because we remembered to handle a key.
+   */
+  const submit = async (event?: React.FormEvent) => {
+    event?.preventDefault();
     if (busy) return;
     setError(null);
     selfInitiated.current = true;
@@ -221,15 +232,15 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
             {[{ name: "Create account", k: "signup" as Mode }, { name: "Log in", k: "login" as Mode }].map((m) => {
               const on = (mode === "signup" && m.k === "signup") || (["login", "forgot", "sent", "reset", "expired"].includes(mode) && m.k === "login");
               return (
-                <div key={m.k} onClick={() => go(m.k)} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", height: 38, borderRadius: 5, cursor: "pointer", background: on ? "#FBF8F2" : "transparent", fontSize: 14, fontWeight: on ? 600 : 500, letterSpacing: "-.015em", color: on ? "#15140F" : "#8C8578" }}>
+                <button key={m.k} type="button" onClick={() => go(m.k)} aria-pressed={on} style={{ appearance: "none", border: 0, flex: 1, display: "flex", alignItems: "center", justifyContent: "center", height: 38, borderRadius: 5, cursor: "pointer", background: on ? "#FBF8F2" : "transparent", fontSize: 14, fontWeight: on ? 600 : 500, letterSpacing: "-.015em", color: on ? "#15140F" : "#8C8578", fontFamily: "inherit" }}>
                   {m.name}
-                </div>
+                </button>
               );
             })}
           </div>
 
           {mode === "signup" && (
-            <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
+            <form onSubmit={submit} noValidate style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <h1 style={{ margin: 0, fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>Start with your own course.</h1>
               <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>Course recon is free and needs no card. You pay only when you want a solved plan.</p>
               {ErrorNote}
@@ -249,7 +260,7 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
               <div style={{ ...fieldLabel, marginTop: 22 }}>PASSWORD</div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, height: 48, marginTop: 10, padding: "0 15px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff" }}>
                 <input type={reveal ? "text" : "password"} autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={`At least ${MIN_PASSWORD} characters`} style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, letterSpacing: ".06em", outline: "none" }} />
-                <span onClick={() => setReveal((r) => !r)} className="mono link-accent" style={{ fontSize: 9, letterSpacing: ".12em", color: "#8C8578", cursor: "pointer", whiteSpace: "nowrap" }}>{reveal ? "HIDE" : "SHOW"}</span>
+                <button type="button" onClick={() => setReveal((r) => !r)} aria-label={reveal ? "Hide password" : "Show password"} className="mono link-accent" style={{ appearance: "none", border: 0, background: "transparent", padding: 0, fontSize: 9, letterSpacing: ".12em", color: "#8C8578", cursor: "pointer", whiteSpace: "nowrap" }}>{reveal ? "HIDE" : "SHOW"}</button>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
                 <div style={{ flex: 1, display: "flex", gap: 4 }}>
@@ -257,17 +268,17 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
                 </div>
                 <span className="mono" style={{ fontSize: 9, letterSpacing: ".12em", color: sCol === "rgba(21,20,15,.1)" ? "#A8A192" : sCol, whiteSpace: "nowrap" }}>{sLab}</span>
               </div>
-              <div onClick={submit} className="pay-btn" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 11, height: 52, marginTop: 26, borderRadius: 8, cursor: canSubmit ? "pointer" : "not-allowed", background: canSubmit ? "#E4622F" : "rgba(21,20,15,.1)", color: canSubmit ? "#fff" : "#A8A192", fontSize: 15.5, fontWeight: 600, letterSpacing: "-.015em" }}>
+              <button type="submit" disabled={!canSubmit || busy} className="pay-btn" style={{ appearance: "none", border: 0, width: "100%",  display: "flex", alignItems: "center", justifyContent: "center", gap: 11, height: 52, marginTop: 26, borderRadius: 8, cursor: canSubmit ? "pointer" : "not-allowed", background: canSubmit ? "#E4622F" : "rgba(21,20,15,.1)", color: canSubmit ? "#fff" : "#A8A192", fontSize: 15.5, fontWeight: 600, letterSpacing: "-.015em" }}>
                 {busy && Spinner}{subLabel}
-              </div>
+              </button>
               <p style={{ margin: "18px 0 0", fontSize: 12.5, lineHeight: 1.55, color: "#8C8578" }}>
                 By creating an account you agree to the <a href="#" style={{ color: "#5C574B", textDecoration: "underline" }}>terms</a> and <a href="#" style={{ color: "#5C574B", textDecoration: "underline" }}>privacy policy</a>. We never sell your training data.
               </p>
-            </div>
+            </form>
           )}
 
           {mode === "login" && (
-            <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
+            <form onSubmit={submit} noValidate style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <h1 style={{ margin: 0, fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>Welcome back.</h1>
               <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>Your plans are where you left them.</p>
               {ErrorNote}
@@ -280,16 +291,16 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
               <div style={{ ...fieldLabel, marginTop: 22 }}>PASSWORD</div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, height: 48, marginTop: 10, padding: "0 15px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff" }}>
                 <input type={reveal ? "text" : "password"} autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, letterSpacing: ".06em", outline: "none" }} />
-                <span onClick={() => setReveal((r) => !r)} className="mono link-accent" style={{ fontSize: 9, letterSpacing: ".12em", color: "#8C8578", cursor: "pointer", whiteSpace: "nowrap" }}>{reveal ? "HIDE" : "SHOW"}</span>
+                <button type="button" onClick={() => setReveal((r) => !r)} aria-label={reveal ? "Hide password" : "Show password"} className="mono link-accent" style={{ appearance: "none", border: 0, background: "transparent", padding: 0, fontSize: 9, letterSpacing: ".12em", color: "#8C8578", cursor: "pointer", whiteSpace: "nowrap" }}>{reveal ? "HIDE" : "SHOW"}</button>
               </div>
-              <div onClick={submit} className="btn-dark-to-accent" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 11, height: 52, marginTop: 26, borderRadius: 8, cursor: "pointer", background: "#E4622F", color: "#fff", fontSize: 15.5, fontWeight: 600, letterSpacing: "-.015em" }}>
+              <button type="submit" disabled={busy} className="btn-dark-to-accent" style={{ appearance: "none", border: 0, width: "100%",  display: "flex", alignItems: "center", justifyContent: "center", gap: 11, height: 52, marginTop: 26, borderRadius: 8, cursor: "pointer", background: "#E4622F", color: "#fff", fontSize: 15.5, fontWeight: 600, letterSpacing: "-.015em" }}>
                 {busy && Spinner}{subLabel}
-              </div>
-            </div>
+              </button>
+            </form>
           )}
 
           {mode === "forgot" && (
-            <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
+            <form onSubmit={submit} noValidate style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <h1 style={{ margin: 0, fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>Reset your password.</h1>
               <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>Enter the email on your account and we will send a link valid for one hour.</p>
               {ErrorNote}
@@ -297,15 +308,15 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
               <div style={{ display: "flex", alignItems: "center", height: 48, marginTop: 10, padding: "0 15px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff" }}>
                 <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, outline: "none" }} />
               </div>
-              <div onClick={submit} className="btn-dark-to-accent" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 11, height: 52, marginTop: 24, borderRadius: 8, cursor: "pointer", background: "#E4622F", color: "#fff", fontSize: 15.5, fontWeight: 600, letterSpacing: "-.015em" }}>
+              <button type="submit" disabled={busy} className="btn-dark-to-accent" style={{ appearance: "none", border: 0, width: "100%",  display: "flex", alignItems: "center", justifyContent: "center", gap: 11, height: 52, marginTop: 24, borderRadius: 8, cursor: "pointer", background: "#E4622F", color: "#fff", fontSize: 15.5, fontWeight: 600, letterSpacing: "-.015em" }}>
                 {busy && Spinner}{subLabel}
-              </div>
-              <div onClick={() => go("login")} className="link-accent" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 44, marginTop: 10, fontSize: 14.5, fontWeight: 500, color: "#5C574B", cursor: "pointer" }}>Back to log in</div>
-            </div>
+              </button>
+              <button type="button" onClick={() => go("login")} className="link-accent" style={{ appearance: "none", border: 0, background: "transparent", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", height: 44, marginTop: 10, fontSize: 14.5, fontWeight: 500, color: "#5C574B", cursor: "pointer", fontFamily: "inherit" }}>Back to log in</button>
+            </form>
           )}
 
           {mode === "sent" && (
-            <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
+            <form onSubmit={submit} noValidate style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: "50%", background: "rgba(92,158,114,.14)" }}>
                 <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="4.5" width="15" height="11" rx="2" stroke="#3E7B55" strokeWidth={1.6} /><path d="M3.2 5.5 10 11l6.8-5.5" stroke="#3E7B55" strokeWidth={1.6} strokeLinecap="round" /></svg>
               </span>
@@ -314,19 +325,19 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
               <div style={{ marginTop: 26, padding: "18px 20px", borderRadius: 10, background: "rgba(21,20,15,.045)", fontSize: 14, lineHeight: 1.55, color: "#5C574B" }}>
                 Nothing arrived? Check spam, then <span onClick={() => go("forgot")} style={{ color: "#C6461B", fontWeight: 500, cursor: "pointer" }}>send it again</span>. If the address has no account we still show this screen — we will not confirm who is registered.
               </div>
-              <div onClick={() => go("login")} className="btn-outline-dark2" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 50, marginTop: 22, border: "1px solid rgba(21,20,15,.18)", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Back to log in</div>
-            </div>
+              <button type="button" onClick={() => go("login")} className="btn-outline-dark2" style={{ appearance: "none", width: "100%", fontFamily: "inherit", background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", height: 50, marginTop: 22, border: "1px solid rgba(21,20,15,.18)", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Back to log in</button>
+            </form>
           )}
 
           {mode === "reset" && (
-            <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
+            <form onSubmit={submit} noValidate style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <h1 style={{ margin: 0, fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>Choose a new password.</h1>
               <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>This link works once and expires one hour after it was sent.</p>
               {ErrorNote}
               <div style={{ ...fieldLabel, marginTop: 30 }}>NEW PASSWORD</div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, height: 48, marginTop: 10, padding: "0 15px", border: "1px solid rgba(21,20,15,.16)", borderRadius: 8, background: "#fff" }}>
                 <input type={reveal ? "text" : "password"} autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={`At least ${MIN_PASSWORD} characters`} style={{ flex: 1, border: 0, background: "transparent", fontSize: 15.5, color: "#15140F", padding: 0, letterSpacing: ".06em", outline: "none" }} />
-                <span onClick={() => setReveal((r) => !r)} className="mono link-accent" style={{ fontSize: 9, letterSpacing: ".12em", color: "#8C8578", cursor: "pointer", whiteSpace: "nowrap" }}>{reveal ? "HIDE" : "SHOW"}</span>
+                <button type="button" onClick={() => setReveal((r) => !r)} aria-label={reveal ? "Hide password" : "Show password"} className="mono link-accent" style={{ appearance: "none", border: 0, background: "transparent", padding: 0, fontSize: 9, letterSpacing: ".12em", color: "#8C8578", cursor: "pointer", whiteSpace: "nowrap" }}>{reveal ? "HIDE" : "SHOW"}</button>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
                 <div style={{ flex: 1, display: "flex", gap: 4 }}>
@@ -345,28 +356,28 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
                   <span style={{ fontSize: 13, color: "#A03227" }}>These do not match yet.</span>
                 </div>
               )}
-              <div onClick={submit} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 11, height: 52, marginTop: 26, borderRadius: 8, cursor: resetOk ? "pointer" : "not-allowed", background: resetOk ? "#E4622F" : "rgba(21,20,15,.1)", color: resetOk ? "#fff" : "#A8A192", fontSize: 15.5, fontWeight: 600, letterSpacing: "-.015em" }}>
+              <button type="submit" disabled={!resetOk || busy} style={{ appearance: "none", border: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 11, height: 52, marginTop: 26, borderRadius: 8, cursor: resetOk ? "pointer" : "not-allowed", background: resetOk ? "#E4622F" : "rgba(21,20,15,.1)", color: resetOk ? "#fff" : "#A8A192", fontSize: 15.5, fontWeight: 600, letterSpacing: "-.015em" }}>
                 {busy && Spinner}{busy ? "Saving…" : "Set password and sign in"}
-              </div>
+              </button>
               <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "#8C8578", marginTop: 16 }}>Every other session will be signed out. Your plans and constraints are untouched.</div>
-            </div>
+            </form>
           )}
 
           {mode === "expired" && (
-            <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
+            <form onSubmit={submit} noValidate style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#E0A33C" }} />
                 <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A0701A" }}>LINK EXPIRED</span>
               </div>
               <h1 style={{ margin: "20px 0 0", fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>That reset link is no longer valid.</h1>
               <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>Reset links last one hour and work once. This one was either used already or has timed out — neither is a problem, just request another.</p>
-              <div onClick={() => go("forgot")} className="btn-dark-to-accent" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 52, marginTop: 28, background: "#E4622F", color: "#fff", borderRadius: 8, fontSize: 15.5, fontWeight: 600, cursor: "pointer" }}>Send a new link</div>
-              <div onClick={() => go("login")} className="btn-outline-dark2" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 50, marginTop: 10, border: "1px solid rgba(21,20,15,.18)", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Back to log in</div>
-            </div>
+              <button type="button" onClick={() => go("forgot")} className="btn-dark-to-accent" style={{ appearance: "none", border: 0, width: "100%", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", height: 52, marginTop: 28, background: "#E4622F", color: "#fff", borderRadius: 8, fontSize: 15.5, fontWeight: 600, cursor: "pointer" }}>Send a new link</button>
+              <button type="button" onClick={() => go("login")} className="btn-outline-dark2" style={{ appearance: "none", width: "100%", fontFamily: "inherit", background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", height: 50, marginTop: 10, border: "1px solid rgba(21,20,15,.18)", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Back to log in</button>
+            </form>
           )}
 
           {mode === "verify-pending" && (
-            <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
+            <form onSubmit={submit} noValidate style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: "50%", background: "rgba(92,158,114,.14)" }}>
                 <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="4.5" width="15" height="11" rx="2" stroke="#3E7B55" strokeWidth={1.6} /><path d="M3.2 5.5 10 11l6.8-5.5" stroke="#3E7B55" strokeWidth={1.6} strokeLinecap="round" /></svg>
               </span>
@@ -379,11 +390,11 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
               >
                 Send it again
               </div>
-            </div>
+            </form>
           )}
 
           {mode === "verify" && (
-            <div style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
+            <form onSubmit={submit} noValidate style={{ animation: "rise .55s cubic-bezier(.16,1,.3,1) both" }}>
               <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: "50%", background: "#5C9E72" }}>
                 <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><path d="M4.5 10.5 8 14l7.5-7.5" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={64} style={{ animation: "draw .6s .2s cubic-bezier(.16,1,.3,1) both" }} /></svg>
               </span>
@@ -391,7 +402,7 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
               <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>Your account is live. Three short questions and the solver knows enough to be useful.</p>
               <Link href={routes.onboarding} className="btn-dark-to-accent" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 52, marginTop: 28, background: "#E4622F", color: "#fff", borderRadius: 8, fontSize: 15.5, fontWeight: 600, letterSpacing: "-.015em" }}>Continue to setup</Link>
               <Link href={routes.races} className="btn-outline-dark2" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 50, marginTop: 10, border: "1px solid rgba(21,20,15,.18)", borderRadius: 8, fontSize: 15, fontWeight: 600 }}>Skip — just browse courses</Link>
-            </div>
+            </form>
           )}
         </div>
       </div>

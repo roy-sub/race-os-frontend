@@ -40,9 +40,21 @@ const CourseMap3D = dynamic(() => import("@/components/CourseMap3D.jsx"), {
   loading: () => <MapFrame>{null}</MapFrame>,
 });
 
-/** The exact words shown under the showcase map. */
+/**
+ * The line under the showcase map.
+ *
+ * It has one job a disclaimer usually does not: it has to stay honest *and*
+ * make the real thing sound worth having. The old wording did the first half
+ * only — "stylised terrain, not to scale. Surveyed, true-scale maps built from
+ * real course and terrain data open with a race plan" is accurate, and it reads
+ * like a legal note apologising for the page it sits on.
+ *
+ * This says the same two facts — this one is a drawing, the real ones are
+ * surveyed — in the order that makes the second one the point rather than the
+ * caveat.
+ */
 export const ILLUSTRATIVE_NOTE =
-  "Illustrative map — stylised terrain, not to scale. Surveyed, true-scale maps built from real course and terrain data open with a race plan.";
+  "A taste of it — hand-drawn, and not to scale. Your race gets the real thing: every metre surveyed from the course itself.";
 
 export type TerrainField = {
   schema_version: number;

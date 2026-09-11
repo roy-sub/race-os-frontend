@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
@@ -11,13 +11,16 @@ import { ApiErrorState } from "@/components/ApiErrorState";
 import { Skeleton } from "@/components/Skeleton";
 import { OsmAttribution } from "@/components/OsmAttribution";
 import { ShowcaseMap, SurveyedMap } from "@/components/CourseMap";
+import { LegChart, ProfilePanel } from "@/components/CourseCharts";
+import { LockedBadge, LockedFigure, LockedPanel, UnlockAction } from "@/components/LockedPanel";
+import { Marquee } from "@/components/Marquee";
 import { routes } from "@/lib/routes";
 import { useCourses, useRecon, type CutoffCheck, type Recon, type Leg } from "@/lib/api/courses";
 import { usePrices, priceFor, formatPrice } from "@/lib/api/billing";
 import { client, unwrap } from "@/lib/api/client";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LEG_COLOR, elevationPath, formatBarrierName, formatClock, formatContents,
+  LEG_COLOR, formatBarrierName, formatClock, formatContents,
   formatKm, formatMargin, formatMetres, sortLegs, widestGapKm,
 } from "@/lib/courseGeo";
 
@@ -27,9 +30,6 @@ const SUBNAV = [
   { href: "#aid", label: "AID STATIONS" },
   { href: "#cutoffs", label: "CUT-OFFS" },
 ];
-
-/** Viewbox width for the elevation strip. It scales to whatever it is given. */
-const MAP_W = 800;
 
 /** The free cut-off calculator. Public, no account — it is the front door. */
 function useCutoffCheck(courseRef: string | null, projectedMinutes: number) {
@@ -55,9 +55,25 @@ function useCutoffCheck(courseRef: string | null, projectedMinutes: number) {
 function ReconContent() {
   const params = useSearchParams();
   const courses = useCourses();
-  // With no ?course= the page shows the first course in the directory rather
-  // than a hardcoded slug, so it stays correct whatever the directory holds.
-  const courseRef = params.get("course") ?? courses.data?.data[0]?.slug ?? null;
+  /**
+   * With no `?course=` the page picks one from the directory rather than a
+   * hardcoded slug, so it stays correct whatever the directory holds.
+   *
+   * It must pick a course that has **course data**, not simply the first row.
+   * The directory lists the announced season alongside the built courses, and
+   * an announced row has no bundle — so taking `data[0]` blindly opened recon
+   * on a race whose map is still being built and answered a visitor's first
+   * click with "no course data yet". That read as a broken page, which is
+   * exactly what a directory's own landing page must never do.
+   *
+   * The directory is already ordered showcase → raceable → announced, so the
+   * first available row is also the best one to open on. Falling back to
+   * `data[0]` keeps the old behaviour if a directory ever holds nothing
+   * raceable at all, where the honest answer really is "being built".
+   */
+  const landing =
+    courses.data?.data.find((c) => c.availability === "available") ?? courses.data?.data[0];
+  const courseRef = params.get("course") ?? landing?.slug ?? null;
 
   const { data: recon, isPending, error, refetch } = useRecon(courseRef);
   const prices = usePrices();
@@ -129,24 +145,25 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
   const orderedLegs = useMemo(() => sortLegs(legs), [legs]);
 
   const elevationLegs = recon.elevation_profile?.legs ?? {};
-  // The bike is the leg the map's profile is about — it is where a long-course
-  // race is decided, and the only leg with meaningful relief on these courses.
-  const chartLeg: Leg = elevationLegs.BIKE ? "BIKE" : orderedLegs[0]?.leg ?? "BIKE";
-  const chartProfile = elevationLegs[chartLeg];
 
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const series = chartProfile?.display;
-  const pointCount = series?.s_km.length ?? 0;
+  /**
+   * Whether the course work is withheld from this visitor.
+   *
+   * The backend redacts the geometry, the segments, the aid stations, the
+   * barrier ladder and the elevation series together, behind one flag. Reading
+   * that flag — rather than inferring "locked" from an empty array — is what
+   * keeps "you have not unlocked this" distinct from "this course has no data",
+   * which look identical from the arrays alone and need opposite screens.
+   */
+  const locked = recon.access ? !recon.access.map_unlocked : false;
+  const unlockHref = `${routes.planBuilder}?course=${encodeURIComponent(course.slug)}`;
 
-  const onHover = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!pointCount) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    setHoverIndex(Math.round(f * (pointCount - 1)));
-  };
-
-  const hoverKm = hoverIndex != null && series ? series.s_km[hoverIndex] : null;
-  const hoverH = hoverIndex != null && series ? series.h_m[hoverIndex] : null;
+  /** Where the cursor is on the wide profile, in km along the leg it is over. */
+  const [hover, setHover] = useState<{ km: number; leg: Leg } | null>(null);
+  const onHoverKm = useCallback(
+    (km: number | null, leg: Leg | null) => setHover(km != null && leg ? { km, leg } : null),
+    [],
+  );
 
   /**
    * The segment the cursor is over, by name.
@@ -157,17 +174,13 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
    * invented, and nothing serves it.
    */
   const hoverSegment = useMemo(() => {
-    if (hoverKm == null) return null;
-    return segments.find((s) => s.leg === chartLeg && hoverKm >= s.from_km && hoverKm <= s.to_km) ?? null;
-  }, [hoverKm, segments, chartLeg]);
-
-  /* Drawn into its own strip now that the route has its own renderer: the
-     chart owns the full height of its box rather than the bottom third of a
-     panel it shared with a flat route drawing. */
-  const chart = useMemo(
-    () => (chartProfile ? elevationPath(chartProfile, { width: MAP_W, top: 8, bottom: 122 }) : null),
-    [chartProfile],
-  );
+    if (!hover) return null;
+    return (
+      segments.find(
+        (s) => s.leg === hover.leg && hover.km >= s.from_km && hover.km <= s.to_km,
+      ) ?? null
+    );
+  }, [hover, segments]);
 
   const [goal, setGoal] = useState(() => Math.round(totals.final_cutoff_minutes ?? 720));
   const cutoff = useCutoffCheck(course.slug, goal);
@@ -186,8 +199,21 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
   const provLabel = bundle.provenance ?? "UNVERIFIED";
   const provTone = provLabel === "OFFICIAL" ? "#8FCBA0" : "#E0B36A";
 
-  /** Slider bounds from the course's own barriers, not a guessed 09:00–17:00. */
-  const finishLimit = Math.max(...barriers.map((b) => b.limit_minutes_from_start), 60);
+  /**
+   * Slider bounds from the course's own final cut-off, not a guessed 09:00–17:00.
+   *
+   * `barriers` is redacted to `[]` on a locked course, and taking the max of an
+   * empty list fell through to the 60-minute floor — which set a 70.3's target
+   * slider to a range of 27 to 66 minutes, with the handle pinned off the end.
+   * `totals.final_cutoff_minutes` ships either way, precisely so the free
+   * cut-off calculator keeps working without the ladder, so it is the figure to
+   * scale from.
+   */
+  const finishLimit = Math.max(
+    ...barriers.map((b) => b.limit_minutes_from_start),
+    totals.final_cutoff_minutes ?? 0,
+    60,
+  );
   const sliderMin = Math.round(finishLimit * 0.45);
   const sliderMax = Math.round(finishLimit * 1.1);
 
@@ -216,7 +242,12 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
             <span style={{ color: "rgba(255,255,255,.8)" }}>{course.name.toUpperCase()}</span>
           </div>
           <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 56 }}>
-            <div>
+            {/* `minWidth: 0` is load-bearing. A flex item defaults to
+                `min-width: auto`, so this column would size itself to the
+                widest thing in it — the 92px title on one line — and report a
+                client width equal to its own content. The marquee measures
+                overflow against that width, found none, and never ran. */}
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
                 {/* Whatever provenance the API returns. Nothing claims OFFICIAL. */}
                 <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 10px", border: `1px solid ${provTone}55`, borderRadius: 4, fontSize: 9.5, letterSpacing: ".14em", color: provTone }}>
@@ -233,7 +264,18 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
                   <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.4)" }}>FICTIONAL COURSE</span>
                 )}
               </div>
-              <h1 style={{ whiteSpace: "nowrap", margin: 0, fontSize: 92, lineHeight: 0.9, fontWeight: 600, letterSpacing: "-.05em", color: "#FBF8F2" }}>{course.name}</h1>
+              {/* Set on one line at 92px, so a long official name — "IRONMAN
+                  70.3 Italy Emilia-Romagna" — ran off the right edge and the
+                  first thing a visitor needs to read was the one thing they
+                  could not. It scrolls itself, and only when it has to. */}
+              <Marquee
+                text={course.name}
+                style={{ maxWidth: "100%" }}
+              >
+                {(name) => (
+                  <h1 style={{ whiteSpace: "nowrap", margin: 0, fontSize: 92, lineHeight: 0.9, fontWeight: 600, letterSpacing: "-.05em", color: "#FBF8F2" }}>{name}</h1>
+                )}
+              </Marquee>
               {/* No date and no start time: those belong to a race, not a course. */}
               <div style={{ display: "flex", gap: 22, marginTop: 20, fontSize: 16, color: "rgba(255,255,255,.66)", whiteSpace: "nowrap" }}>
                 <span>{course.place}</span>
@@ -288,59 +330,39 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
           />
         )}
 
-        {/* The elevation profile stays a chart, because that is what it is:
-            distance along the leg against height, with the aid stations and
-            cut-offs on it. The map answers "where"; this answers "how hard,
-            and where does it get hard". */}
-        {chart && (
-          <div
-            onMouseMove={onHover}
-            onMouseLeave={() => setHoverIndex(null)}
-            style={{ position: "relative", background: "#15140F", borderRadius: 12, marginTop: 14, padding: "20px 24px 18px", cursor: "crosshair" }}
-          >
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 20 }}>
-              <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".16em", color: "rgba(251,248,242,.4)" }}>
-                {chartLeg} ELEVATION
-              </div>
-              <div className="mono" style={{ display: "flex", gap: 16, fontSize: 11, color: "#FBF8F2" }}>
-                {hoverKm != null && <span>{hoverKm.toFixed(1)} km</span>}
-                {hoverH != null && <span>{Math.round(hoverH)} m</span>}
-              </div>
-            </div>
-            <svg
-              viewBox={`0 0 ${MAP_W} 130`}
-              style={{ display: "block", width: "100%", height: "auto", marginTop: 14 }}
-              role="img"
-              aria-label={`Elevation profile for the ${chartLeg.toLowerCase()} leg of ${course.name}`}
-            >
-              <defs>
-                <linearGradient id="cr-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#E4622F" stopOpacity={0.26} />
-                  <stop offset="100%" stopColor="#E4622F" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <path d={chart.area} fill="url(#cr-fill)" />
-              <path d={chart.line} fill="none" stroke="#E4622F" strokeWidth={1.7} strokeLinejoin="round" />
-              {hoverIndex != null && pointCount > 1 && (
-                <line
-                  x1={((hoverIndex / (pointCount - 1)) * MAP_W).toFixed(1)}
-                  y1={0}
-                  x2={((hoverIndex / (pointCount - 1)) * MAP_W).toFixed(1)}
-                  y2={130}
-                  stroke="rgba(255,255,255,.42)"
-                  strokeWidth={1}
-                />
-              )}
-            </svg>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, marginTop: 12 }}>
-              <div style={{ fontSize: 13, lineHeight: 1.5, color: "#96907F", maxWidth: 620 }}>
-                {hoverSegment
-                  ? `${hoverSegment.name} · ${hoverSegment.from_km.toFixed(1)}–${hoverSegment.to_km.toFixed(1)} km · ${formatMetres(hoverSegment.elevation_gain_m)} m gain · ${hoverSegment.surface_quality.replace(/_/g, " ")}`
-                  : "Move across the profile to read a segment."}
-              </div>
-              <OsmAttribution attribution={bundle.attribution} tone="dark" style={{ flex: "none" }} />
-            </div>
+        {/*
+          The elevation profile stays a chart, because that is what it is:
+          distance against height, with the segments underneath it. The map
+          answers "where"; this answers "how hard, and where does it get hard".
+
+          Two views. **Bike** is where a long-course race is decided and the leg
+          with the relief; **Race** puts all three legs on one cumulative axis,
+          which is the only view in which the day reads as a single shape rather
+          than three unrelated cards.
+        */}
+        {locked ? (
+          <div style={{ marginTop: 14 }}>
+            <LockedPanel
+              minHeight={210}
+              dark
+              title="The profile, metre by metre"
+              body="Every climb on this course, surveyed from terrain rather than barometers, with the segments named and the gradients measured. It opens with your race plan."
+              action={<UnlockAction href={unlockHref} />}
+            />
           </div>
+        ) : (
+          <ProfilePanel
+            legs={elevationLegs}
+            courseName={course.name}
+            showcase={Boolean(recon.access?.illustrative_map)}
+            onHoverKm={onHoverKm}
+            attribution={<OsmAttribution attribution={bundle.attribution} tone="dark" style={{ flex: "none" }} />}
+            hoverLabel={
+              hoverSegment
+                ? `${hoverSegment.name} · ${hoverSegment.from_km.toFixed(1)}–${hoverSegment.to_km.toFixed(1)} km · ${formatMetres(hoverSegment.elevation_gain_m)} m gain · ${hoverSegment.surface_quality.replace(/_/g, " ")}`
+                : undefined
+            }
+          />
         )}
       </section>
 
@@ -367,9 +389,14 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
                   {formatKm(l.distance_m)}<span style={{ fontSize: 16, color: "#8C8578" }}> km</span>
                 </div>
                 <div style={{ fontSize: 14, color: "#5C574B", marginTop: 10 }}>
-                  {formatMetres(l.elevation_gain_m)} m gain
-                  {p && p.laps > 1 ? ` · ${p.laps} laps` : ""}
-                  {` · ${l.surface_quality.replace(/_/g, " ")}`}
+                  {/* "0 m gain · typical road" was the swim's line. Both halves
+                      are true of the row and neither is true of a swim, which
+                      is what happens when one template describes three sports. */}
+                  {l.leg === "SWIM"
+                    ? `open water${p && p.laps > 1 ? ` · ${p.laps} laps` : ""}`
+                    : `${formatMetres(l.elevation_gain_m)} m gain${
+                        p && p.laps > 1 ? ` · ${p.laps} laps` : ""
+                      } · ${l.surface_quality.replace(/_/g, " ")}`}
                 </div>
               </div>
             );
@@ -380,8 +407,14 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
               {totals.final_cutoff_minutes == null ? "—" : formatClock(totals.final_cutoff_minutes)}
             </div>
             <div style={{ fontSize: 14, color: "#5C574B", marginTop: 10 }}>
-              {barriers.length} {barriers.length === 1 ? "barrier" : "barriers"}
-              {totals.final_cutoff_name ? ` · ${formatBarrierName(totals.final_cutoff_name).toLowerCase()}` : ""}
+              {/* The headline cut-off ships either way; the ladder behind it
+                  does not. Printing "0 barriers" from a redacted list states
+                  something false about the course, so the count is simply
+                  omitted when it is not ours to give. */}
+              {totals.final_cutoff_name ? formatBarrierName(totals.final_cutoff_name).toLowerCase() : ""}
+              {barriers.length > 0
+                ? `${totals.final_cutoff_name ? " · " : ""}${barriers.length} ${barriers.length === 1 ? "barrier" : "barriers"}`
+                : `${totals.final_cutoff_name ? " · " : ""}full ladder with a plan`}
             </div>
           </div>
         </div>
@@ -398,31 +431,45 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
         <div style={{ display: "grid", gridTemplateColumns: `repeat(${orderedLegs.length},1fr)`, gap: 20, marginTop: 36 }}>
           {orderedLegs.map((l) => {
             const p = elevationLegs[l.leg];
-            const small = p ? elevationPath(p, { width: 320, top: 12, bottom: 76 }) : null;
-            const flat = !p || p.gain_m <= 0;
+            const swim = l.leg === "SWIM";
+            /* A swim has no relief and never will; a locked leg has relief we
+               are not showing. The old card collapsed both into "SEA LEVEL —
+               no relief to render", which for a 90 km bike leg with 387 m of
+               climb was simply untrue. */
+            const flat = !locked && !swim && (!p || p.gain_m <= 0);
             return (
               <div key={l.leg} style={{ background: "#FBF8F2", border: "1px solid rgba(21,20,15,.14)", borderRadius: 8, padding: "22px 24px 18px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
                   <span style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-.02em" }}>{l.leg.charAt(0) + l.leg.slice(1).toLowerCase()}</span>
-                  <span className="mono" style={{ fontSize: 11, color: "#8C8578" }}>
-                    {flat ? "SEA LEVEL" : `${formatMetres(p!.gain_m)} M · MAX ${formatMetres(p!.max_m)} M`}
-                    {p && p.laps > 1 ? ` · ${p.laps} LAPS` : ""}
-                  </span>
-                </div>
-                <svg viewBox="0 0 320 90" style={{ display: "block", width: "100%", marginTop: 18 }} role="img" aria-label={`${l.leg} elevation profile`}>
-                  {flat || !small ? (
-                    <line x1={0} y1={70} x2={320} y2={70} stroke={`${LEG_COLOR[l.leg]}66`} strokeWidth={1.6} />
+                  {locked && !swim ? (
+                    <LockedBadge />
                   ) : (
-                    <>
-                      <path d={small.area} fill={`${LEG_COLOR[l.leg]}22`} />
-                      <path d={small.line} fill="none" stroke={LEG_COLOR[l.leg]} strokeWidth={1.7} strokeLinejoin="round" strokeLinecap="round" />
-                    </>
+                    <span className="mono" style={{ fontSize: 11, color: "#8C8578", textAlign: "right" }}>
+                      {swim
+                        ? `${formatKm(l.distance_m)} KM${p && p.laps > 1 ? ` · ${p.laps} LAPS` : ""}`
+                        : flat
+                          ? "SEA LEVEL"
+                          : `${formatMetres(p!.gain_m)} M · MAX ${formatMetres(p!.max_m)} M${p!.laps > 1 ? ` · ${p!.laps} LAPS` : ""}`}
+                    </span>
                   )}
-                </svg>
+                </div>
+                <div style={{ marginTop: 18 }}>
+                  <LegChart
+                    leg={l.leg}
+                    profile={p}
+                    distanceM={l.distance_m}
+                    locked={locked}
+                    showcase={Boolean(recon.access?.illustrative_map)}
+                  />
+                </div>
                 <div style={{ fontSize: 13.5, color: "#5C574B", marginTop: 6 }}>
-                  {flat
-                    ? "No relief to render — this leg is flat."
-                    : `${formatKm(l.distance_m)} km, ${formatMetres(p!.gain_m)} m up and ${formatMetres(p!.loss_m)} m down.`}
+                  {swim
+                    ? `${formatKm(l.distance_m)} km of open water${p && p.laps > 1 ? `, swum in ${p.laps} laps` : ""}.`
+                    : locked
+                      ? `${formatKm(l.distance_m)} km, ${formatMetres(l.elevation_gain_m)} m of climbing. The profile opens with a plan.`
+                      : flat
+                        ? `${formatKm(l.distance_m)} km, and flat the whole way.`
+                        : `${formatKm(l.distance_m)} km, ${formatMetres(p!.gain_m)} m up and ${formatMetres(p!.loss_m)} m down.`}
                 </div>
               </div>
             );
@@ -437,31 +484,57 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
           <div>
             <div className="mono" style={{ fontSize: 10, letterSpacing: ".18em", color: "#E4622F", marginBottom: 18 }}>SUPPLY MAP</div>
             <Reveal as="h2" style={{ margin: 0, fontSize: 52, lineHeight: 0.98, fontWeight: 600, letterSpacing: "-.045em" }}>
-              {aid.length} aid {aid.length === 1 ? "station" : "stations"}.
+              {/* "0 aid stations." was the headline on every locked course — a
+                  sentence that says the organiser puts out no water. The count
+                  is the withheld thing, so the headline stops being a count. */}
+              {locked
+                ? "Every aid station, in order."
+                : `${aid.length} aid ${aid.length === 1 ? "station" : "stations"}.`}
             </Reveal>
           </div>
           <div style={{ display: "flex", gap: 34, paddingBottom: 6 }}>
-            {Object.entries(provCounts).map(([label, count]) => (
-              <div key={label}>
-                <div className="mono" style={{ fontSize: 25, letterSpacing: "-.03em" }}>{count}</div>
-                <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578", marginTop: 6 }}>{label}</div>
-              </div>
-            ))}
-            {bikeGap != null && (
-              <div>
-                <div className="mono" style={{ fontSize: 25, letterSpacing: "-.03em" }}>{bikeGap.toFixed(1)}<span style={{ fontSize: 13, color: "#8C8578" }}>km</span></div>
-                <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578", marginTop: 6 }}>WIDEST BIKE GAP</div>
-              </div>
-            )}
-            {runGap != null && (
-              <div>
-                <div className="mono" style={{ fontSize: 25, letterSpacing: "-.03em" }}>{runGap.toFixed(1)}<span style={{ fontSize: 13, color: "#8C8578" }}>km</span></div>
-                <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578", marginTop: 6 }}>WIDEST RUN GAP</div>
-              </div>
+            {locked ? (
+              <>
+                <LockedFigure label="STATIONS" width={40} />
+                <LockedFigure label="WIDEST BIKE GAP" width={58} />
+                <LockedFigure label="WIDEST RUN GAP" width={58} />
+              </>
+            ) : (
+              <>
+                {Object.entries(provCounts).map(([label, count]) => (
+                  <div key={label}>
+                    <div className="mono" style={{ fontSize: 25, letterSpacing: "-.03em" }}>{count}</div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578", marginTop: 6 }}>{label}</div>
+                  </div>
+                ))}
+                {bikeGap != null && (
+                  <div>
+                    <div className="mono" style={{ fontSize: 25, letterSpacing: "-.03em" }}>{bikeGap.toFixed(1)}<span style={{ fontSize: 13, color: "#8C8578" }}>km</span></div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578", marginTop: 6 }}>WIDEST BIKE GAP</div>
+                  </div>
+                )}
+                {runGap != null && (
+                  <div>
+                    <div className="mono" style={{ fontSize: 25, letterSpacing: "-.03em" }}>{runGap.toFixed(1)}<span style={{ fontSize: 13, color: "#8C8578" }}>km</span></div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578", marginTop: 6 }}>WIDEST RUN GAP</div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
 
+        {locked ? (
+          <Reveal>
+            <LockedPanel
+              minHeight={300}
+              title="Where the water is, and what is on the table"
+              body="Every station on the course, in order, with its distance and exactly what it carries — listed as published, so nothing is assumed to be there. Your plan puts your own fuelling on top of it."
+              action={<UnlockAction href={unlockHref} />}
+              preview={<AidPreview />}
+            />
+          </Reveal>
+        ) : (
         <Reveal style={{ background: "#FBF8F2", borderRadius: 8, padding: 14, boxShadow: "0 30px 60px -46px rgba(21,20,15,.3)" }}>
           <div style={{ position: "relative", padding: "22px 0 10px" }}>
             <div style={{ position: "absolute", left: 150, top: 34, bottom: 34, width: 2, background: "linear-gradient(to bottom,rgba(21,20,15,.06),rgba(228,98,47,.35),rgba(21,20,15,.06))" }} />
@@ -498,6 +571,7 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
             <a href="#convert" className="mono link-accent" style={{ fontSize: 10, letterSpacing: ".14em", color: "#C6461B", whiteSpace: "nowrap" }}>SOLVE MY FUELLING →</a>
           </div>
         </Reveal>
+        )}
       </section>
 
       {/* ---------------- Cut-off clock, from POST /cutoff-check ---------------- */}
@@ -605,6 +679,46 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
       <div style={{ marginTop: 104 }}>
         <Footer extra={` · COURSE BUNDLE ${bundle.version}`} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * The blurred stand-in behind the locked aid-station panel.
+ *
+ * Deliberately generic: evenly-spaced rows of the right shape, not this
+ * course's real spacing. Drawing the true station positions at low fidelity
+ * would leak the thing being sold, and drawing plausible-but-wrong ones would
+ * be a lie about the course. A texture is neither.
+ */
+function AidPreview() {
+  return (
+    <div style={{ padding: "26px 0" }} aria-hidden>
+      {Array.from({ length: 6 }, (_, i) => (
+        <div
+          key={i}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "150px 44px minmax(0,1fr) 150px",
+            alignItems: "center",
+            padding: "14px 24px 14px 0",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "flex-end", paddingRight: 26 }}>
+            <div style={{ width: 62, height: 15, borderRadius: 3, background: "rgba(21,20,15,.16)" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <span style={{ width: 13, height: 13, borderRadius: "50%", background: i % 2 ? "#E4622F" : "#C9C1B2" }} />
+          </div>
+          <div style={{ paddingLeft: 22 }}>
+            <div style={{ width: `${46 + ((i * 17) % 38)}%`, height: 15, borderRadius: 3, background: "rgba(21,20,15,.17)" }} />
+            <div style={{ width: `${30 + ((i * 23) % 34)}%`, height: 11, borderRadius: 3, background: "rgba(21,20,15,.10)", marginTop: 7 }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <div style={{ width: 72, height: 19, borderRadius: 4, background: "rgba(21,20,15,.10)" }} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

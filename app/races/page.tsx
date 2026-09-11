@@ -35,6 +35,19 @@ import { formatClock, formatMetres, formatBarrierName } from "@/lib/courseGeo";
 const DIST_FILTERS = ["All", "Full", "70.3", "Olympic", "Sprint"] as const;
 const SORTS = ["DATE", "DIFFICULTY", "DISTANCE"] as const;
 
+/**
+ * The directory's own order, mirroring `_DIRECTORY_BAND` in the backend.
+ *
+ * Showcase, then raceable, then announced. Duplicated here rather than trusting
+ * the response order because the page re-sorts client-side on every filter
+ * keystroke, and a sort that silently discarded the server's intent is what put
+ * the un-enterable races on top in the first place.
+ */
+function directoryBand(course: Course): number {
+  if (course.visibility === "showcase") return 0;
+  return course.availability === "available" ? 1 : 2;
+}
+
 const DIFF_COLOR: Record<string, string> = {
   APPROACHABLE: "#3E7B55",
   MODERATE: "#5C574B",
@@ -201,9 +214,22 @@ export default function RaceDirectoryPage() {
     list = list.filter((c) => `${c.name} ${c.place}`.toLowerCase().includes(q));
   }
   if (sort === "DATE") {
-    // Dateless courses last rather than first: an absent date sorts as nothing,
-    // and nothing is not "the soonest race".
+    /*
+     * Band first, then date — the same order `GET /courses` returns, so the
+     * client and the server agree about what "next" means.
+     *
+     * Sorting on the date alone put fourteen races nobody can enter above the
+     * two they can, because an announced race in September outranks a raceable
+     * one in October on date and on nothing else. A directory whose first screen
+     * is entirely dead ends is a worse answer to "which race next?" than an
+     * alphabetical one.
+     *
+     * Dateless courses still sort last *within* their band: an absent date is
+     * nothing, and nothing is not "the soonest race".
+     */
     list = [...list].sort((a, b) => {
+      const band = directoryBand(a) - directoryBand(b);
+      if (band !== 0) return band;
       const left = a.next_edition_date ?? "9999";
       const right = b.next_edition_date ?? "9999";
       return left.localeCompare(right) || a.name.localeCompare(b.name);

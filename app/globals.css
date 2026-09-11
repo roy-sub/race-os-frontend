@@ -126,3 +126,34 @@ input[type=range]::-moz-range-thumb{ width:20px; height:20px; border-radius:50%;
   *{ animation:none !important; transition:none !important; }
   [data-reveal],[data-lines] span > span,[data-zoom] > *{ opacity:1 !important; transform:none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   Open-water drift.
+
+   The swim card has no elevation to draw, so it draws water. Each wave layer
+   is sampled across twice its box and slid by exactly half, which loops without
+   a seam; three layers at different speeds give the parallax of open water for
+   the cost of one transform each. The global reduced-motion rule above already
+   stops these, so there is no separate opt-out here.
+   --------------------------------------------------------------------------- */
+@keyframes raceos-drift{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
+@keyframes raceos-drift-slow{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
+@keyframes raceos-drift-fast{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
+
+/* ---------------------------------------------------------------------------
+   The long-name marquee.
+
+   Only applied when a title actually overflows its container — see `Marquee`
+   in components/Marquee.tsx. The track holds two copies of the text, so
+   translating by half its width returns to the starting frame exactly.
+   --------------------------------------------------------------------------- */
+@keyframes raceos-marquee{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
+.marquee-track{ display:inline-flex; white-space:nowrap; will-change:transform; }
+/* Only the running state gets a fade. A title that fits must not be dimmed at
+   its own last letter for no reason. */
+.marquee-mask:has(.marquee-track[data-run="true"]){
+  -webkit-mask-image:linear-gradient(to right,#000 0,#000 88%,transparent 100%);
+          mask-image:linear-gradient(to right,#000 0,#000 88%,transparent 100%);
+}
+.marquee-track[data-run="true"]{ animation:raceos-marquee var(--marquee-duration,26s) linear infinite; }
+.marquee-mask:hover .marquee-track[data-run="true"]{ animation-play-state:paused; }
