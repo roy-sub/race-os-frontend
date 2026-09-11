@@ -242,15 +242,26 @@ export function LegChart({
 }) {
   const tone = LEG_COLOR[leg];
 
+  // Locked is decided before the leg is.
+  //
+  // The swim used to draw its water motif whatever the course's access said,
+  // on the reasoning that a swim has no elevation to withhold. True of the
+  // data, wrong on the page: two cards behind a lock and a third wide open
+  // reads as one of them having failed rather than as a paywall, and the
+  // motif is atmosphere anyway. All three legs are covered together now, and
+  // the swim is covered *as water*, so the section still looks like itself.
+  if (locked) {
+    return <LockedChart width={width} height={height} tone={tone} water={leg === "SWIM"} />;
+  }
   if (leg === "SWIM") {
     return <WaterMotif width={width} height={height} laps={profile?.laps ?? 1} tone={tone} />;
   }
-  if (locked || !profile) return <LockedChart width={width} height={height} tone={tone} />;
+  if (!profile) return <LockedChart width={width} height={height} tone={tone} />;
 
   const drawn = elevationPath(
     profile,
     { width, top: 12, bottom: height - 14 },
-    showcase ? { radius: 4, points: 34 } : {},
+    showcase ? { radius: 5, points: 22 } : {},
   );
   if (!drawn || profile.gain_m <= 0) {
     return (
@@ -299,10 +310,13 @@ export function LockedChart({
   width = 320,
   height = 90,
   tone = "#8C8578",
+  water = false,
 }: {
   width?: number;
   height?: number;
   tone?: string;
+  /** Draw the swim's water behind the blur instead of a ridge. */
+  water?: boolean;
 }) {
   const gid = useId().replace(/:/g, "");
   const d = useMemo(() => {
@@ -322,6 +336,20 @@ export function LockedChart({
       ` L ${width} ${height - 14} L 0 ${height - 14} Z`
     );
   }, [width, height]);
+
+  if (water) {
+    // The same motif the unlocked card shows, behind the same blur as the
+    // ridge — so the swim reads as covered rather than as missing, and the
+    // three cards are covered the same way.
+    return (
+      <div
+        aria-hidden
+        style={{ filter: "blur(4px) saturate(.55)", opacity: 0.55, pointerEvents: "none" }}
+      >
+        <WaterMotif width={width} height={height} tone={tone} animate={false} />
+      </div>
+    );
+  }
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} style={{ display: "block", width: "100%" }} aria-hidden>
@@ -390,7 +418,7 @@ export function ProfilePanel({
   const effective: PanelMode = mode === "BIKE" && !legs.BIKE ? "RACE" : mode;
 
   const single = effective === "BIKE" ? legs.BIKE : undefined;
-  const draw = showcase ? { radius: 4, points: 56 } : {};
+  const draw = showcase ? { radius: 5, points: 38 } : {};
   const drawn = useMemo(
     () =>
       effective === "RACE"

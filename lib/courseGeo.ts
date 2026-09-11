@@ -125,16 +125,20 @@ export function seriesPath(
   {
     smooth = true,
     points,
-    radius = 2,
+    radius = 3,
   }: { smooth?: boolean; points?: number; radius?: number } = {},
 ): ElevationDrawing | null {
   if (!s_km.length || s_km.length !== h_m.length) return null;
 
-  // Roughly one sample per 11px of drawn width. Denser than that and the
-  // curve starts carrying sampling noise again; sparser and a real climb
-  // gets rounded off. Clamped so a tiny sparkline still has enough points to
-  // have a shape, and a very wide panel does not pay for detail nobody sees.
-  const target = points ?? Math.max(40, Math.min(140, Math.round(box.width / 11)));
+  // Roughly one sample per 18px of drawn width.
+  //
+  // This was one per 11px, which is where the remaining roughness lived: at
+  // that density each Bézier spans only a few pixels, so the curve is carrying
+  // the sample-to-sample jitter of the terrain rather than its shape, and the
+  // eye reads the result as faceted. Longer spans over a blurred series give a
+  // line that flows. The clamp keeps a tiny sparkline from losing its shape
+  // and a wide panel from paying for detail nobody can see.
+  const target = points ?? Math.max(26, Math.min(90, Math.round(box.width / 18)));
 
   // Thin first, then blur. Blurring at full density and *then* thinning would
   // put the noise back at the sample points that survive.
@@ -161,7 +165,7 @@ export function seriesPath(
   ]);
 
   const line = smooth
-    ? smoothPath(pts)
+    ? smoothPath(pts, { bounds: [box.top, box.bottom] })
     : pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
 
   return {
@@ -307,49 +311,65 @@ export function widestGapKm(stations: { leg: Leg; km: number }[], leg: Leg): num
 // ---------------------------------------------------------------------------
 
 /**
- * A monotone cubic path through `points`.
+ * A C1-continuous cubic path through `points`.
  *
  * The elevation chart used to be an `L`-segment polyline through every sample,
  * which at ~240 points across 800px put a vertex every three pixels and read as
  * a heart-rate trace rather than a landscape. Terrain is not spiky at that
  * scale; the spikes were sampling noise given equal weight to the real shape of
- * the course.
+ * the course. `smoothSeries` removes that noise; this draws what is left.
  *
- * Two things fix it, and both are needed. `smoothSeries` removes the noise
- * before anything is drawn, and this draws what is left as curves rather than
- * corners. The tangents are clamped Catmull-Rom (Fritsch–Carlson): where three
- * consecutive points are monotonic the curve is too, so a smoothed climb never
- * dips below its own data on the way up — the artefact that makes a naive
- * spline look wrong to anyone who knows the course.
+ * **Why the first version still looked rough.** It did two things that each
+ * flatten a curve back toward the polygon it came from:
+ *
+ * 1. It halved the Catmull-Rom tangents (`tension = 0.5`). The standard
+ *    construction is `p1 + (p2 - p0) / 6`; at half that the control points sit
+ *    close to their anchors, every segment is nearly a straight line, and the
+ *    underlying polygon shows through.
+ * 2. It clamped each control point into the span of its own two samples. That
+ *    guarantees no overshoot, but it breaks the tangent match at every local
+ *    maximum — so the curve arrived at each peak flat and left it with a
+ *    corner, which is exactly where the eye goes.
+ *
+ * Full tangents and no per-segment clamp give a genuinely smooth line: the
+ * control points either side of each anchor are collinear with it, so the curve
+ * is C1 everywhere and the joins are invisible. Overshoot is handled at the
+ * other end — `smoothSeries` runs first, so there are no spikes left to
+ * overshoot — and `bounds` keeps the ink inside the panel regardless.
  */
-export function smoothPath(points: [number, number][], tension = 0.5): string {
+export function smoothPath(
+  points: [number, number][],
+  { tension = 1, bounds }: { tension?: number; bounds?: [number, number] } = {},
+): string {
   if (points.length === 0) return "";
-  if (points.length === 1) return `M${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
+  if (points.length === 1) return `M${points[0][0].toFixed(2)} ${points[0][1].toFixed(2)}`;
 
-  const out = [`M${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`];
+  // Only a guard against ink leaving the panel — never a per-segment clamp,
+  // which is what cornered the old curve at its own peaks.
+  const hold = (y: number) =>
+    bounds ? Math.min(bounds[1], Math.max(bounds[0], y)) : y;
+
+  const out = [`M${points[0][0].toFixed(2)} ${points[0][1].toFixed(2)}`];
   for (let i = 0; i < points.length - 1; i++) {
     const p0 = points[i === 0 ? 0 : i - 1];
     const p1 = points[i];
     const p2 = points[i + 1];
     const p3 = points[i + 2 >= points.length ? points.length - 1 : i + 2];
 
-    // Catmull-Rom tangents, scaled to Bézier control points.
-    let c1y = p1[1] + ((p2[1] - p0[1]) / 6) * tension;
-    let c2y = p2[1] - ((p3[1] - p1[1]) / 6) * tension;
-
-    // Monotone clamp: never let a control point leave the span its own two
-    // samples define, so the curve cannot overshoot into a dip or a spike
-    // that the data does not contain.
-    const lo = Math.min(p1[1], p2[1]);
-    const hi = Math.max(p1[1], p2[1]);
-    c1y = Math.min(hi, Math.max(lo, c1y));
-    c2y = Math.min(hi, Math.max(lo, c2y));
-
+    // Catmull-Rom tangents as Bézier control points. The two controls around
+    // each interior anchor are collinear with it, which is what makes the
+    // joins invisible.
+    const c1y = hold(p1[1] + ((p2[1] - p0[1]) / 6) * tension);
+    const c2y = hold(p2[1] - ((p3[1] - p1[1]) / 6) * tension);
     const c1x = p1[0] + (p2[0] - p1[0]) / 3;
     const c2x = p1[0] + ((p2[0] - p1[0]) * 2) / 3;
+
+    // Two decimals, not one: at 800 viewBox units across a chart this wide,
+    // rounding controls to 0.1 quantises the tangents just enough to show as
+    // faint facets along a shallow gradient.
     out.push(
-      `C${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ` +
-        `${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`,
+      `C${c1x.toFixed(2)} ${c1y.toFixed(2)} ${c2x.toFixed(2)} ${c2y.toFixed(2)} ` +
+        `${p2[0].toFixed(2)} ${p2[1].toFixed(2)}`,
     );
   }
   return out.join(" ");

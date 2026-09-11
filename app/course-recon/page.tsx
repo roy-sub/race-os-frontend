@@ -462,7 +462,7 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
               <div key={l.leg} style={{ background: "#FBF8F2", border: "1px solid rgba(21,20,15,.14)", borderRadius: 8, padding: "22px 24px 18px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
                   <span style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-.02em" }}>{l.leg.charAt(0) + l.leg.slice(1).toLowerCase()}</span>
-                  {locked && !swim ? (
+                  {locked ? (
                     <LockedBadge />
                   ) : (
                     <span className="mono" style={{ fontSize: 11, color: "#8C8578", textAlign: "right" }}>
@@ -484,10 +484,16 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
                   />
                 </div>
                 <div style={{ fontSize: 13.5, color: "#5C574B", marginTop: 6 }}>
-                  {swim
-                    ? `${formatKm(l.distance_m)} km of open water${p && p.laps > 1 ? `, swum in ${p.laps} laps` : ""}.`
-                    : locked
-                      ? `${formatKm(l.distance_m)} km, ${formatMetres(l.elevation_gain_m)} m of climbing. The profile opens with a plan.`
+                  {/* Locked first, for every leg. The distance is a fact that
+                      ships either way and is worth keeping on the card; what
+                      changes is that the swim no longer describes itself as
+                      though it were open while its neighbours are shut. */}
+                  {locked
+                    ? swim
+                      ? `${formatKm(l.distance_m)} km of open water. The course opens with a plan.`
+                      : `${formatKm(l.distance_m)} km, ${formatMetres(l.elevation_gain_m)} m of climbing. The profile opens with a plan.`
+                    : swim
+                      ? `${formatKm(l.distance_m)} km of open water${p && p.laps > 1 ? `, swum in ${p.laps} laps` : ""}.`
                       : flat
                         ? `${formatKm(l.distance_m)} km, and flat the whole way.`
                         : `${formatKm(l.distance_m)} km, ${formatMetres(p!.gain_m)} m up and ${formatMetres(p!.loss_m)} m down.`}
