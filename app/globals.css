@@ -157,3 +157,24 @@ input[type=range]::-moz-range-thumb{ width:20px; height:20px; border-radius:50%;
 }
 .marquee-track[data-run="true"]{ animation:raceos-marquee var(--marquee-duration,26s) linear infinite; }
 .marquee-mask:hover .marquee-track[data-run="true"]{ animation-play-state:paused; }
+
+/* ---------------------------------------------------------------------------
+   The sign-in screen, on a phone.
+
+   The app is a fixed-width desktop layout by design — `minWidth: 1320` on every
+   page — and for the marketing and planning screens that is a deliberate
+   choice. For *auth* it was not a choice, it was a lockout: the screen is a
+   two-column grid with the photograph on the left and the form on the right, so
+   at 390px a visitor got a full screen of photograph with the form parked
+   off-canvas to the right, and no indication it was there. You could not sign
+   in to this product on a phone.
+
+   One breakpoint fixes it, and only for this screen: drop the decorative column
+   and let the form have the width. Everything else about the page is unchanged.
+   --------------------------------------------------------------------------- */
+@media (max-width: 860px){
+  .auth-shell{ min-width:0 !important; grid-template-columns:minmax(0,1fr) !important; }
+  .auth-art{ display:none !important; }
+  .auth-form{ padding:32px 22px 48px !important; }
+  .auth-form > div{ max-width:none !important; }
+}
