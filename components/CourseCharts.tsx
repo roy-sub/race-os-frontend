@@ -567,18 +567,26 @@ export function ProfilePanel({
             />
           ),
         )}
-        {bands?.map((b) => (
-          <text
-            key={`${b.leg}-label`}
-            x={(b.fromX + b.toX) / 2}
-            y={PANEL_H - 8}
-            textAnchor="middle"
-            className="mono"
-            style={{ fontSize: 9, letterSpacing: ".14em", fill: "rgba(251,248,242,.38)" }}
-          >
-            {b.leg}
-          </text>
-        ))}
+        {bands?.map((b) => {
+          // Centred on its own band, but kept inside the viewBox. The swim is
+          // ~1.7% of a 70.3 and its band starts at x=0, so a centred label
+          // hung off the left edge and rendered as "WIM".
+          const half = (b.leg.length * 6.4) / 2;
+          const centre = (b.fromX + b.toX) / 2;
+          const x = Math.min(PANEL_W - half - 2, Math.max(half + 2, centre));
+          return (
+            <text
+              key={`${b.leg}-label`}
+              x={x}
+              y={PANEL_H - 8}
+              textAnchor="middle"
+              className="mono"
+              style={{ fontSize: 9, letterSpacing: ".14em", fill: "rgba(251,248,242,.38)" }}
+            >
+              {b.leg}
+            </text>
+          );
+        })}
 
         <path d={drawn.area} fill={`url(#${gid}-fill)`} />
         <path
