@@ -9,7 +9,7 @@ import { CountUp } from "./CountUp";
 import { routes } from "@/lib/routes";
 import { client, unwrap } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/errors";
-import { MARKETING_COURSE_COUNT } from "@/lib/marketing";
+import { useCourses } from "@/lib/api/courses";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { useAuthProviders } from "@/lib/auth/useProviders";
 import { safeNextPath } from "@/lib/auth/RequireAuth";
@@ -37,6 +37,8 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
   const searchParams = useSearchParams();
   const { signIn, signUp, status } = useAuth();
   const providers = useAuthProviders();
+  const courses = useCourses();
+  const raceCount = courses.data?.meta.total ?? null;
 
   const [mode, setMode] = useState<Mode>(initialMode);
   const [email, setEmail] = useState("");
@@ -196,13 +198,14 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
           <div style={{ fontSize: 44, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em", color: "#FBF8F2", maxWidth: 400 }}>Nobody fails at this on fitness.</div>
           <div style={{ fontSize: 16, lineHeight: 1.5, color: "rgba(255,255,255,.6)", maxWidth: 360, marginTop: 16 }}>They fail on logistics, a fuelling number nobody checked, and a cut-off they never modelled.</div>
           <div style={{ display: "flex", gap: 40, marginTop: 38, paddingTop: 26, borderTop: "1px solid rgba(255,255,255,.14)" }}>
-            {/* The same fixed marketing figure the home hero shows, so the two
-                banners cannot quote different numbers at the same visitor. */}
+            {/* The real number of listed races, from the same endpoint the
+                directory reads. A banner and a directory quoting different
+                figures to the same visitor is worse than no banner. */}
             <div>
               <div className="mono" style={{ fontSize: 24, letterSpacing: "-.03em", color: "#FBF8F2", minWidth: "2ch" }}>
-                <CountUp value={MARKETING_COURSE_COUNT} decimals={0} suffix="" />
+                {raceCount == null ? "—" : <CountUp value={raceCount} decimals={0} suffix="" />}
               </div>
-              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "rgba(255,255,255,.4)", marginTop: 7 }}>COURSES</div>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "rgba(255,255,255,.4)", marginTop: 7 }}>RACES LISTED</div>
             </div>
             <div>
               <div className="mono" style={{ fontSize: 24, letterSpacing: "-.03em", color: "#FBF8F2" }}><CountUp value={5} decimals={0} suffix="" /></div>

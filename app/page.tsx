@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
@@ -9,10 +9,9 @@ import { CountUp } from "@/components/CountUp";
 import { MediaPlaceholder } from "@/components/MediaPlaceholder";
 import { routes } from "@/lib/routes";
 import { BAGS, FAQS, fmtClock } from "@/lib/landing";
-import { useCourses, useRecon } from "@/lib/api/courses";
+import { useCourses } from "@/lib/api/courses";
 import { HERO_STATS } from "@/lib/marketing";
-import { elevationPath, formatKm, formatMetres, projectLegs, sortLegs } from "@/lib/courseGeo";
-import { OsmAttribution } from "@/components/OsmAttribution";
+import { ShowcaseMap } from "@/components/CourseMap";
 
 const COURSES = [
   "TRAMUNTANA FULL",
@@ -59,49 +58,12 @@ const STAR =
   "M10 1l2.6 5.6 6.1.7-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L1.3 7.3l6.1-.7z";
 
 export default function LandingPage() {
-  /**
-   * The course canvas draws a real course, not a sine wave.
-   *
-   * It takes whichever course the directory lists first and reads its recon
-   * payload — the same public, unauthenticated endpoints the course pages use.
-   * If the API is unreachable the canvas renders empty rather than falling back
-   * to a fabricated loop: a blank panel that shows a real outage beats a
-   * plausible one that hides it.
-   */
+  /* The course count in the hero, from the real calendar. The map itself is
+     the showcase venue and needs no fetch — see the Course canvas section. */
   const courses = useCourses();
-  const featuredSlug = courses.data?.data[0]?.slug ?? null;
-  const recon = useRecon(featuredSlug);
-  const featured = recon.data ?? null;
-
-  /**
-   * Whether the canvas can ever draw, and why not when it cannot.
-   *
-   * `useRecon` is disabled until the directory names a course, and a disabled
-   * query reports `isPending: true` indefinitely — so "LOADING COURSE" was a
-   * label with no end condition whenever `GET /courses` failed. These three
-   * states are mutually exclusive and each one says something true.
-   */
-  const canvasError = courses.error ?? recon.error;
-  const canvasLoading = !canvasError && !featured && (courses.isPending || recon.isPending);
-  const canvasEmpty = !canvasError && !canvasLoading && !featured;
-
-  const canvasLegs = useMemo(() => (featured ? sortLegs(featured.legs) : []), [featured]);
-  const canvasProjection = useMemo(
-    () => (canvasLegs.length ? projectLegs(canvasLegs, { width: 1200, height: 286 }, 20) : null),
-    [canvasLegs],
-  );
-  const canvasBikeLeg = canvasLegs.find((l) => l.leg === "BIKE") ?? canvasLegs[0] ?? null;
-  const canvasProfile = featured?.elevation_profile?.legs?.[canvasBikeLeg?.leg ?? "BIKE"] ?? null;
-  const canvasSeries = canvasProfile?.display ?? null;
-  const canvasPoints = canvasSeries?.s_km.length ?? 0;
-  const canvasChart = useMemo(
-    () => (canvasProfile ? elevationPath(canvasProfile, { width: 1200, top: 306, bottom: 400 }) : null),
-    [canvasProfile],
-  );
+  const raceCount = courses.data?.meta.total ?? null;
 
   const [goal, setGoal] = useState(705);
-  const [hoverOn, setHoverOn] = useState(false);
-  const [hi, setHi] = useState(0);
   const [bagIdx, setBagIdx] = useState(0);
   const [openFaqs, setOpenFaqs] = useState<boolean[]>([false, false, false, false]);
 
@@ -126,18 +88,6 @@ export default function LandingPage() {
   const statusColor = { clear: "#2E7D53", tight: "#A9761A", fail: "#C0432E" }[status];
   const pillBg = status === "clear" ? "#EAF5EE" : status === "tight" ? "#FBF2E0" : "#FBEAE6";
 
-  const X = (i: number) => (canvasPoints > 1 ? (i / (canvasPoints - 1)) * 1200 : 0);
-  const hoverKm = canvasSeries && hi < canvasPoints ? canvasSeries.s_km[hi] : null;
-  const hoverH = canvasSeries && hi < canvasPoints ? canvasSeries.h_m[hi] : null;
-
-  /** The point on the route matching the hovered point on the profile. */
-  const routeMarker = (() => {
-    if (!canvasProjection || !canvasBikeLeg || canvasPoints < 2) return null;
-    const f = hi / (canvasPoints - 1);
-    const c = canvasBikeLeg.coordinates[Math.round(f * (canvasBikeLeg.coordinates.length - 1))];
-    return c ? canvasProjection.project(c[0], c[1]) : null;
-  })();
-
   const carb = Math.max(55, Math.min(90, Math.round(55 + (960 - goal) * 0.09)));
   const carbPct = Math.round((carb / 90) * 100) + "%";
   const gels = Math.ceil(((bike / 60) * carb - 120) / 25);
@@ -159,14 +109,6 @@ export default function LandingPage() {
     { name: "T2", target: "transition", time: fmtClock(t2) },
     { name: "Run", target: fmtClock(run / 42.2) + "/km", time: fmtClock(run) },
   ];
-
-  const onHover = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (canvasPoints < 2) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    setHoverOn(true);
-    setHi(Math.round(f * (canvasPoints - 1)));
-  };
 
   const bag = BAGS[bagIdx];
 
@@ -276,12 +218,22 @@ export default function LandingPage() {
             </div>
             <div style={{ display: "flex", gap: 52, paddingBottom: 8 }}>
               {/*
-                Fixed marketing figures from lib/marketing.ts — deliberately not
-                read from the API. They always render, so the banner never shows
-                a dash or drops a column while the backend is waking up.
+                The first figure is the real calendar, from `GET /courses` — the
+                same number the directory shows, because a hero and a directory
+                disagreeing in front of the same visitor is worse than no hero.
+                The other two are fixed copy and labelled as what they are; see
+                lib/marketing.ts.
               */}
+              <Reveal delay={0.34}>
+                <div className="mono" style={{ fontSize: 32, fontWeight: 500, letterSpacing: "-.035em", color: "#FBF8F2", minWidth: "2ch" }}>
+                  {raceCount == null ? "—" : <CountUp value={raceCount} decimals={0} suffix="" />}
+                </div>
+                <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".16em", color: "rgba(255,255,255,.45)", marginTop: 8 }}>
+                  RACES LISTED
+                </div>
+              </Reveal>
               {HERO_STATS.map((stat, i) => (
-                <Reveal key={stat.label} delay={0.34 + i * 0.06}>
+                <Reveal key={stat.label} delay={0.4 + i * 0.06}>
                   <div className="mono" style={{ fontSize: 32, fontWeight: 500, letterSpacing: "-.035em", color: "#FBF8F2" }}>
                     <CountUp value={stat.value} decimals={stat.decimals} suffix={stat.suffix} />
                   </div>
@@ -304,98 +256,28 @@ export default function LandingPage() {
             lines={["Your course,", "before you ride it."]}
             style={{ whiteSpace: "nowrap", margin: 0, fontSize: 60, lineHeight: 0.98, fontWeight: 600, letterSpacing: "-.045em" }}
           />
-          <Reveal as="p" style={{ margin: "0 0 10px", maxWidth: 330, fontSize: 16, lineHeight: 1.55, color: "#5C574B" }}>
-            Real elevation, real aid stations, real cut-off positions. Hover the profile and the course marker follows.
+          <Reveal as="p" style={{ margin: "0 0 10px", maxWidth: 340, fontSize: 16, lineHeight: 1.55, color: "#5C574B" }}>
+            Every cut-off, every aid station and every metre of climbing, in the shape you will
+            actually ride it. Drag to turn it; the readout follows your cursor across the ground.
           </Reveal>
         </div>
 
-        <Reveal style={{ background: "#15140F", borderRadius: 9, padding: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, padding: "0 4px" }}>
-            <div className="mono" style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 10, letterSpacing: ".16em", color: "rgba(255,255,255,.42)" }}>
-              <span style={{ width: 5, height: 5, background: canvasError ? "#C0392B" : "#E4622F", borderRadius: "50%" }} />{featured
-                ? `${featured.course.name.toUpperCase()} · ${featured.course.place.toUpperCase()}`
-                : canvasError
-                  ? "COURSE UNAVAILABLE"
-                  : canvasEmpty
-                    ? "NO COURSES YET"
-                    : "LOADING COURSE"}
-            </div>
-            <div style={{ display: "flex", gap: 3, padding: 3, background: "rgba(255,255,255,.06)", borderRadius: 5 }}>
-              <span className="mono" style={{ padding: "5px 12px", borderRadius: 3, background: "#E4622F", color: "#fff", fontSize: 9.5, letterSpacing: ".12em" }}>2D</span>
-              <span className="mono" style={{ padding: "5px 12px", borderRadius: 3, color: "rgba(255,255,255,.4)", fontSize: 9.5, letterSpacing: ".12em" }}>3D</span>
-            </div>
-          </div>
-          <div
-            onMouseMove={onHover}
-            onMouseLeave={() => setHoverOn(false)}
-            style={{ position: "relative", borderRadius: 8, background: "#0B0A09", overflow: "hidden", cursor: "crosshair" }}
-          >
-            <svg viewBox="0 0 1200 400" style={{ display: "block", width: "100%", height: "auto" }}>
-              <defs>
-                <linearGradient id="lp-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#E4622F" stopOpacity={0.28} />
-                  <stop offset="100%" stopColor="#E4622F" stopOpacity={0.015} />
-                </linearGradient>
-              </defs>
-              {canvasProjection?.paths.map((pathRow) => (
-                <path
-                  key={pathRow.leg}
-                  d={pathRow.d}
-                  fill="none"
-                  stroke={pathRow.leg === "BIKE" ? "rgba(255,255,255,.3)" : "rgba(255,255,255,.14)"}
-                  strokeWidth={pathRow.leg === "BIKE" ? 1.7 : 1.4}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                  strokeDasharray={pathRow.leg === "RUN" ? "5 5" : undefined}
-                />
-              ))}
-              {canvasProjection && featured?.aid_stations.map((station, k) => {
-                const legRow = canvasLegs.find((l) => l.leg === station.leg);
-                if (!legRow?.coordinates.length) return null;
-                const f = Math.max(0, Math.min(1, (station.km * 1000) / legRow.distance_m));
-                const c = legRow.coordinates[Math.round(f * (legRow.coordinates.length - 1))];
-                const [x, y] = canvasProjection.project(c[0], c[1]);
-                return <circle key={k} cx={x} cy={y} r={3.4} fill="#0B0A09" stroke="rgba(255,255,255,.5)" strokeWidth={1.3} />;
-              })}
-              {hoverOn && routeMarker && <circle cx={routeMarker[0].toFixed(1)} cy={routeMarker[1].toFixed(1)} r={6.5} fill="#E4622F" stroke="#0B0A09" strokeWidth={2.4} />}
-              {canvasChart && <path d={canvasChart.area} fill="url(#lp-fill)" />}
-              {canvasChart && <path d={canvasChart.line} fill="none" stroke="#E4622F" strokeWidth={1.7} strokeLinejoin="round" />}
-              {hoverOn && canvasChart && <line x1={X(hi).toFixed(1)} y1={298} x2={X(hi).toFixed(1)} y2={400} stroke="rgba(255,255,255,.4)" strokeWidth={1} />}
-            </svg>
-            {(canvasError || canvasEmpty) && (
-              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
-                <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".16em", color: canvasError ? "#E86A5A" : "rgba(255,255,255,.4)" }}>
-                  {canvasError ? "COURSE DATA UNAVAILABLE" : "NO COURSES YET"}
-                </div>
-                <div style={{ maxWidth: 420, fontSize: 15, lineHeight: 1.55, color: "rgba(251,248,242,.6)" }}>
-                  {canvasError
-                    ? "We could not reach the course library, so there is nothing real to draw here. The rest of the page still works."
-                    : "The course library is empty right now."}
-                </div>
-                {canvasError && (
-                  <button
-                    type="button"
-                    onClick={() => { void courses.refetch(); void recon.refetch(); }}
-                    style={{ marginTop: 4, height: 40, padding: "0 18px", background: "transparent", border: "1px solid rgba(251,248,242,.28)", borderRadius: 6, color: "#FBF8F2", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
-                  >
-                    Try again
-                  </button>
-                )}
-              </div>
-            )}
-            <div className="mono" style={{ position: "absolute", left: 18, bottom: 14, fontSize: 9.5, letterSpacing: ".14em", color: "rgba(255,255,255,.34)" }}>
-              {canvasBikeLeg && canvasProfile
-                ? `${canvasBikeLeg.leg} · ${formatKm(canvasBikeLeg.distance_m)} KM · ${formatMetres(canvasProfile.gain_m)} M GAIN`
-                : ""}
-            </div>
-            <div className="mono" style={{ position: "absolute", right: 18, top: 16, display: "flex", gap: 18, fontSize: 11, color: "#FBF8F2" }}>
-              {hoverOn && hoverKm != null && <span>{hoverKm.toFixed(1)} km</span>}
-              {hoverOn && hoverH != null && <span>{Math.round(hoverH)} m</span>}
-            </div>
-          </div>
-          <OsmAttribution attribution={featured?.bundle.attribution} tone="dark" style={{ marginTop: 12, padding: "0 4px" }} />
+        {/*
+          The showcase map.
+
+          One map, and deliberately always the same one: Kalmar 70.3, our own
+          demonstration course. It is a tuned graphic rather than a survey — its
+          three legs are drawn at different scales so the swim reads at all, and
+          the vertical is exaggerated — and it says so on its own face rather
+          than in a footnote. Every real race gets this same renderer with
+          measured terrain and one honest scale, which is what opens with a
+          plan.
+        */}
+        <Reveal>
+          <ShowcaseMap height="min(72vh,760px)" />
         </Reveal>
       </section>
+
 
       {/* ---------------- Problem cards ---------------- */}
       <section style={{ maxWidth: 1400, margin: "0 auto", padding: "120px 48px 0" }}>

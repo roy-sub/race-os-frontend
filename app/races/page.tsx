@@ -13,16 +13,27 @@ import { useCourses, type Course, type DistanceType } from "@/lib/api/courses";
 import { formatClock, formatMetres, formatBarrierName } from "@/lib/courseGeo";
 
 /**
- * The race directory.
+ * The race directory — the season, in date order.
  *
- * There is no DATE column, no countdown, no MONTH filter and no DATE sort, and
- * their absence is the point: a *course* has no date. The same course runs every
- * year, and a date belongs to a race — this athlete, this edition — which is why
- * countdowns live on the dashboard and My Plans instead.
+ * Two things changed here and both are about honesty.
+ *
+ * **There is a date column now.** There was not, on the principle that a
+ * *course* has no date and only a race does. That principle is right about
+ * storage and wrong about this screen: a directory of dateless venues cannot
+ * answer "which race next?", which is the one question it is read to answer.
+ * The date shown is the organiser's announced edition, carried on the course as
+ * `next_edition_date`, and nothing is solved from it — an athlete's own race
+ * still owns the date their plan is built against.
+ *
+ * **A race with no course data yet is listed anyway**, marked coming soon and
+ * not clickable. The season is announced as a whole and the course work lands
+ * one event at a time; listing only the finished ones would misrepresent the
+ * season, and hiding the rest would have an athlete wondering whether we know
+ * their race exists.
  */
 
 const DIST_FILTERS = ["All", "Full", "70.3", "Olympic", "Sprint"] as const;
-const SORTS = ["DIFFICULTY", "DISTANCE"] as const;
+const SORTS = ["DATE", "DIFFICULTY", "DISTANCE"] as const;
 
 const DIFF_COLOR: Record<string, string> = {
   APPROACHABLE: "#3E7B55",
@@ -52,27 +63,47 @@ function provStyle(p: string | null | undefined) {
   return (p && PROV_STYLE[p]) || PROV_FALLBACK;
 }
 
+/** `2026-09-20` → `20 SEP 2026`. Absent stays absent. */
+function courseDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.valueOf())) return "—";
+  return date
+    .toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    .toUpperCase();
+}
+
 function CourseRow({ course, delay }: { course: Course; delay: number }) {
   const prov = provStyle(course.provenance);
   const diffColor = DIFF_COLOR[course.difficulty] ?? "#5C574B";
+  /* A row with no published course data is a real listing, not a link. Making
+     it clickable would open a recon page with nothing on it, which reads as a
+     broken page rather than as an event we have not built yet. */
+  const available = course.availability === "available";
 
-  return (
-    <Reveal
-      as={Link}
-      href={courseReconHref(course.slug)}
-      delay={delay}
-      className="next-step-card"
-      style={{ display: "block", background: "#FBF8F2", borderRadius: 12, padding: 0, overflow: "hidden", boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)" }}
-    >
-      <div style={{ display: "grid", gridTemplateColumns: "172px minmax(0,1.3fr) 1fr 1fr auto", gap: 26, alignItems: "center", padding: "0 28px 0 0" }}>
+  const inner = (
+      <div style={{ display: "grid", gridTemplateColumns: "172px minmax(0,1.3fr) 116px 1fr 1fr auto", gap: 24, alignItems: "center", padding: "0 28px 0 0", opacity: available ? 1 : 0.62 }}>
         <MediaPlaceholder path={course.media_card_path ?? "assets/courses/placeholder.jpg"} background={course.tone_color ?? "#3E352B"} style={{ height: 132, position: "relative", flex: "none" }} />
         <div style={{ minWidth: 0, padding: "22px 0" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: prov.dot, flex: "none" }} />
-            <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: prov.fg, whiteSpace: "nowrap" }}>{course.provenance ?? "UNVERIFIED"}</span>
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: available ? prov.dot : "#C4BCAC", flex: "none" }} />
+            <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: available ? prov.fg : "#8C8578", whiteSpace: "nowrap" }}>
+              {available ? (course.provenance ?? "UNVERIFIED") : "COURSE DATA COMING"}
+            </span>
+            {course.is_user_submitted && (
+              <span className="mono" style={{ fontSize: 8, letterSpacing: ".12em", padding: "2px 6px", borderRadius: 3, background: "rgba(21,20,15,.07)", color: "#5C574B", whiteSpace: "nowrap" }}>
+                YOURS
+              </span>
+            )}
           </div>
-          <div style={{ fontSize: 25, fontWeight: 600, letterSpacing: "-.032em", marginTop: 9, whiteSpace: "nowrap" }}>{course.name}</div>
+          <div style={{ fontSize: 23, fontWeight: 600, letterSpacing: "-.032em", marginTop: 9 }}>{course.name}</div>
           <div style={{ fontSize: 13.5, color: "#8C8578", marginTop: 6, whiteSpace: "nowrap" }}>{course.place}</div>
+        </div>
+        <div>
+          <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>DATE</div>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12.5, marginTop: 8, whiteSpace: "nowrap" }}>
+            {courseDate(course.next_edition_date)}
+          </div>
         </div>
         <div>
           <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>DISTANCE</div>
@@ -94,8 +125,36 @@ function CourseRow({ course, delay }: { course: Course; delay: number }) {
             <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: diffColor, whiteSpace: "nowrap" }}>{course.difficulty}</span>
           </div>
         </div>
-        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, color: "#E4622F", flex: "none" }}>→</span>
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, color: available ? "#E4622F" : "#C4BCAC", flex: "none" }}>
+          {available ? "→" : "SOON"}
+        </span>
       </div>
+  );
+
+  const shell: React.CSSProperties = {
+    display: "block",
+    background: "#FBF8F2",
+    borderRadius: 12,
+    padding: 0,
+    overflow: "hidden",
+    boxShadow: "0 1px 2px rgba(21,20,15,.04), 0 12px 32px -24px rgba(21,20,15,.18)",
+  };
+
+  if (!available) {
+    return (
+      <Reveal
+        delay={delay}
+        title={`${course.name} is on the calendar. Its course data is being built.`}
+        style={{ ...shell, cursor: "default", border: "1px dashed rgba(21,20,15,.16)", boxShadow: "none" }}
+      >
+        {inner}
+      </Reveal>
+    );
+  }
+
+  return (
+    <Reveal as={Link} href={courseReconHref(course.slug)} delay={delay} className="next-step-card" style={shell}>
+      {inner}
     </Reveal>
   );
 }
@@ -104,7 +163,7 @@ function CourseRow({ course, delay }: { course: Course; delay: number }) {
 function CourseRowSkeleton() {
   return (
     <div style={{ background: "#FBF8F2", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 2px rgba(21,20,15,.04)" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "172px minmax(0,1.3fr) 1fr 1fr auto", gap: 26, alignItems: "center", padding: "0 28px 0 0" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "172px minmax(0,1.3fr) 116px 1fr 1fr auto", gap: 24, alignItems: "center", padding: "0 28px 0 0" }}>
         <Skeleton width={172} height={132} radius={0} />
         <div style={{ padding: "22px 0", display: "flex", flexDirection: "column", gap: 9 }}>
           <Skeleton width={92} height={9} />
@@ -126,7 +185,8 @@ function CourseRowSkeleton() {
 export default function RaceDirectoryPage() {
   const [query, setQuery] = useState("");
   const [dist, setDist] = useState<(typeof DIST_FILTERS)[number]>("All");
-  const [sort, setSort] = useState<(typeof SORTS)[number]>("DIFFICULTY");
+  // Date first, because the directory is read to answer "which race next?".
+  const [sort, setSort] = useState<(typeof SORTS)[number]>("DATE");
 
   // Filtering server-side would round-trip on every keystroke for three rows.
   // The whole directory is one small page, so it is fetched once and filtered here.
@@ -140,19 +200,27 @@ export default function RaceDirectoryPage() {
     const q = query.trim().toLowerCase();
     list = list.filter((c) => `${c.name} ${c.place}`.toLowerCase().includes(q));
   }
-  list =
-    sort === "DIFFICULTY"
-      ? [...list].sort((a, b) => (DIFF_ORDER[b.difficulty] ?? 0) - (DIFF_ORDER[a.difficulty] ?? 0))
-      : [...list].sort((a, b) => (DIST_ORDER[b.distance_type] ?? 0) - (DIST_ORDER[a.distance_type] ?? 0));
+  if (sort === "DATE") {
+    // Dateless courses last rather than first: an absent date sorts as nothing,
+    // and nothing is not "the soonest race".
+    list = [...list].sort((a, b) => {
+      const left = a.next_edition_date ?? "9999";
+      const right = b.next_edition_date ?? "9999";
+      return left.localeCompare(right) || a.name.localeCompare(b.name);
+    });
+  } else if (sort === "DIFFICULTY") {
+    list = [...list].sort((a, b) => (DIFF_ORDER[b.difficulty] ?? 0) - (DIFF_ORDER[a.difficulty] ?? 0));
+  } else {
+    list = [...list].sort((a, b) => (DIST_ORDER[b.distance_type] ?? 0) - (DIST_ORDER[a.distance_type] ?? 0));
+  }
 
   const resultCount = isPending ? "…" : `${list.length} ${list.length === 1 ? "COURSE" : "COURSES"}`;
 
-  /** Provenance counts, tallied from the rows themselves rather than asserted. */
-  const provCounts = all.reduce<Record<string, number>>((acc, c) => {
-    const key = c.provenance ?? "UNVERIFIED";
-    acc[key] = (acc[key] ?? 0) + 1;
-    return acc;
-  }, {});
+  /* Tallied from the rows themselves rather than asserted. The split that
+     matters to someone reading this page is not provenance — it is whether they
+     can plan for the race today. */
+  const availableCount = all.filter((c) => c.availability === "available").length;
+  const comingCount = all.length - availableCount;
 
   return (
     <div style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320 }}>
@@ -162,18 +230,31 @@ export default function RaceDirectoryPage() {
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 56 }}>
           <div>
             <Reveal className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>
-              {total === undefined ? "LOADING THE DIRECTORY" : `${total} ${total === 1 ? "COURSE" : "COURSES"} · FREE TO EXPLORE`}
+              {total === undefined ? "LOADING THE CALENDAR" : `${total} ${total === 1 ? "RACE" : "RACES"} · EUROPE 2026/27`}
             </Reveal>
-            <Reveal as="h1" delay={0.05} style={{ margin: "16px 0 0", fontSize: 66, lineHeight: 0.94, fontWeight: 600, letterSpacing: "-.05em" }}>Every course, every cut-off.</Reveal>
-            <Reveal as="p" delay={0.1} style={{ margin: "15px 0 0", maxWidth: 520, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>Real elevation, real aid stations, real barriers. No account, no card, no trial.</Reveal>
+            <Reveal as="h1" delay={0.05} style={{ margin: "16px 0 0", fontSize: 66, lineHeight: 0.94, fontWeight: 600, letterSpacing: "-.05em" }}>The season, and every cut-off in it.</Reveal>
+            <Reveal as="p" delay={0.1} style={{ margin: "15px 0 0", maxWidth: 540, fontSize: 16.5, lineHeight: 1.5, color: "#5C574B" }}>
+              Where each race is, how far, how much climbing and what the tightest cut-off is — free,
+              and without an account. Course data lands one event at a time; a race waiting for its
+              map says so rather than hiding.
+            </Reveal>
           </div>
-          <Reveal delay={0.14} style={{ display: "flex", gap: 34, paddingBottom: 8, flex: "none" }}>
-            {Object.entries(provCounts).map(([label, count]) => (
-              <div key={label}>
-                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 30, letterSpacing: "-.04em" }}>{count}</div>
-                <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "#A8A192", marginTop: 7 }}>{label}</div>
-              </div>
-            ))}
+          <Reveal delay={0.14} style={{ display: "flex", gap: 34, paddingBottom: 8, flex: "none", alignItems: "flex-end" }}>
+            <div>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 30, letterSpacing: "-.04em" }}>{availableCount}</div>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "#A8A192", marginTop: 7 }}>PLANNABLE NOW</div>
+            </div>
+            <div>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 30, letterSpacing: "-.04em", color: "#8C8578" }}>{comingCount}</div>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "#A8A192", marginTop: 7 }}>COURSE DATA COMING</div>
+            </div>
+            <Link
+              href={routes.addRace}
+              className="btn-outline-dark2"
+              style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 44, padding: "0 18px", border: "1px solid rgba(21,20,15,.18)", borderRadius: 7, fontSize: 14, fontWeight: 600 }}
+            >
+              Add your own race
+            </Link>
           </Reveal>
         </div>
 
@@ -228,7 +309,7 @@ export default function RaceDirectoryPage() {
             <p style={{ margin: "12px auto 0", maxWidth: 420, fontSize: 15, lineHeight: 1.55, color: "#6B6455" }}>
               {total === undefined
                 ? "Clear the filters to see the whole directory."
-                : `${total} ${total === 1 ? "course is" : "courses are"} available. Clear the filters to see ${total === 1 ? "it" : "them"}.`}
+                : `${total} ${total === 1 ? "race is" : "races are"} listed. Clear the filters to see ${total === 1 ? "it" : "them"}, or add your own.`}
             </p>
             <span
               onClick={() => { setQuery(""); setDist("All"); }}

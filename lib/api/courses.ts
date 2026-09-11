@@ -109,6 +109,22 @@ export type Recon = {
     lat: number;
     lng: number;
     is_fictional: boolean;
+    availability: string;
+    next_edition_date: string | null;
+    is_user_submitted: boolean;
+  };
+  /**
+   * Whether the caller may see the surveyed map, and why not if not.
+   *
+   * Sent rather than inferred: a client that guessed from an empty
+   * `coordinates` array could not tell "you have not paid for this" from
+   * "this course has no geometry", and those need different screens.
+   */
+  access: {
+    map_unlocked: boolean;
+    map_locked_reason: string | null;
+    illustrative_map: boolean;
+    illustrative_note: string | null;
   };
   bundle: {
     version: string;
@@ -184,7 +200,11 @@ export function useCourses(params: { dist?: DistanceType | null; q?: string | nu
       );
       return page as unknown as CoursePage;
     },
-    // The directory changes when a bundle is published, which is rare.
+    // The directory changes when a bundle is published, which is rare — but
+    // it also changes shape with *who is asking* (a signed-in athlete is not
+    // shown the marketing showcase), and that is handled by the auth provider
+    // clearing the whole cache on sign-in rather than by a shorter staleness
+    // window here.
     staleTime: 5 * 60_000,
   });
 }

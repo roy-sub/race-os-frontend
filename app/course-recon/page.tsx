@@ -10,6 +10,7 @@ import { MediaPlaceholder } from "@/components/MediaPlaceholder";
 import { ApiErrorState } from "@/components/ApiErrorState";
 import { Skeleton } from "@/components/Skeleton";
 import { OsmAttribution } from "@/components/OsmAttribution";
+import { ShowcaseMap, SurveyedMap } from "@/components/CourseMap";
 import { routes } from "@/lib/routes";
 import { useCourses, useRecon, type CutoffCheck, type Recon, type Leg } from "@/lib/api/courses";
 import { usePrices, priceFor, formatPrice } from "@/lib/api/billing";
@@ -17,7 +18,7 @@ import { client, unwrap } from "@/lib/api/client";
 import { useQuery } from "@tanstack/react-query";
 import {
   LEG_COLOR, elevationPath, formatBarrierName, formatClock, formatContents,
-  formatKm, formatMargin, formatMetres, projectLegs, sortLegs, widestGapKm,
+  formatKm, formatMargin, formatMetres, sortLegs, widestGapKm,
 } from "@/lib/courseGeo";
 
 const SUBNAV = [
@@ -27,14 +28,8 @@ const SUBNAV = [
   { href: "#cutoffs", label: "CUT-OFFS" },
 ];
 
+/** Viewbox width for the elevation strip. It scales to whatever it is given. */
 const MAP_W = 800;
-const MAP_H = 460;
-/**
- * The route occupies the upper band and the elevation profile the lower one.
- * They share a canvas but not a region — overlapping them makes both unreadable.
- */
-const ROUTE_H = 326;
-const ELEV_TOP = 348;
 
 /** The free cut-off calculator. Public, no account — it is the front door. */
 function useCutoffCheck(courseRef: string | null, projectedMinutes: number) {
@@ -132,10 +127,6 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
   const { course, bundle, legs, totals, barriers, aid_stations: aid, segments } = recon;
 
   const orderedLegs = useMemo(() => sortLegs(legs), [legs]);
-  const projection = useMemo(
-    () => projectLegs(orderedLegs, { width: MAP_W, height: ROUTE_H }, 18),
-    [orderedLegs],
-  );
 
   const elevationLegs = recon.elevation_profile?.legs ?? {};
   // The bike is the leg the map's profile is about — it is where a long-course
@@ -170,8 +161,11 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
     return segments.find((s) => s.leg === chartLeg && hoverKm >= s.from_km && hoverKm <= s.to_km) ?? null;
   }, [hoverKm, segments, chartLeg]);
 
+  /* Drawn into its own strip now that the route has its own renderer: the
+     chart owns the full height of its box rather than the bottom third of a
+     panel it shared with a flat route drawing. */
   const chart = useMemo(
-    () => (chartProfile ? elevationPath(chartProfile, { width: MAP_W, top: ELEV_TOP, bottom: MAP_H }) : null),
+    () => (chartProfile ? elevationPath(chartProfile, { width: MAP_W, top: 8, bottom: 122 }) : null),
     [chartProfile],
   );
 
@@ -257,106 +251,99 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
         </div>
       </section>
 
-      {/* ---------------- Map + elevation, both from real geometry ---------------- */}
+      {/* ---------------- The course map ---------------- */}
+      {/*
+        One renderer for every map on the site.
+
+        The route used to be drawn here as a flat SVG polyline over a dark
+        panel — a second map design, unrelated to the one the marketing page
+        shows, which meant the product looked like two products. It is the same
+        component now: measured terrain, the real routes at one honest scale,
+        the same pins and the same cursor readout.
+
+        What it shows depends on whether this athlete may see it. `access` comes
+        from the server rather than being inferred from an empty coordinate
+        array, because "you have not paid for this" and "this course has no
+        geometry yet" need different screens and look identical otherwise.
+      */}
       <section style={{ maxWidth: 1360, margin: "34px auto 0", padding: "0 56px" }}>
-        <div style={{ background: "#15140F", borderRadius: 9, overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 316px" }}>
-            <div onMouseMove={onHover} onMouseLeave={() => setHoverIndex(null)} style={{ position: "relative", background: "#0B0A09", cursor: "crosshair" }}>
-              <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} style={{ display: "block", width: "100%", height: "auto" }} role="img" aria-label={`Route and bike elevation profile for ${course.name}`}>
-                <defs>
-                  <linearGradient id="cr-fill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#E4622F" stopOpacity={0.26} />
-                    <stop offset="100%" stopColor="#E4622F" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
+        {recon.access?.illustrative_map ? (
+          <ShowcaseMap height="min(70vh,740px)" />
+        ) : (
+          <SurveyedMap
+            courseRef={course.slug}
+            courseName={course.name}
+            height="min(70vh,740px)"
+            locked={recon.access ? !recon.access.map_unlocked : false}
+            lockedReason={recon.access?.map_locked_reason}
+            onUnlock={
+              <Link
+                href={routes.planBuilder}
+                className="btn-accent"
+                style={{ display: "inline-flex", alignItems: "center", height: 46, padding: "0 24px", background: "#E4622F", color: "#fff", borderRadius: 7, fontSize: 15, fontWeight: 600 }}
+              >
+                Build a plan for this race
+              </Link>
+            }
+          />
+        )}
 
-                {/* The real route: legs[].coordinates, GeoJSON order, one shared projection. */}
-                {projection?.paths.map((p) => (
-                  <path
-                    key={p.leg}
-                    d={p.d}
-                    fill="none"
-                    stroke={p.leg === "BIKE" ? "rgba(255,255,255,.42)" : "rgba(255,255,255,.24)"}
-                    strokeWidth={p.leg === "BIKE" ? 1.9 : 1.5}
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                    strokeDasharray={p.leg === "RUN" ? "5 5" : undefined}
-                  />
-                ))}
-
-                {/* An aid station is drawn where it actually is, by interpolating its
-                    km along the leg it belongs to. */}
-                {projection && aid.map((s, i) => {
-                  const legRow = orderedLegs.find((l) => l.leg === s.leg);
-                  if (!legRow?.coordinates.length) return null;
-                  const f = Math.max(0, Math.min(1, (s.km * 1000) / legRow.distance_m));
-                  const c = legRow.coordinates[Math.round(f * (legRow.coordinates.length - 1))];
-                  const [x, y] = projection.project(c[0], c[1]);
-                  return <circle key={`${s.leg}-${s.km}-${i}`} cx={x} cy={y} r={3.4} fill="#0B0A09" stroke="rgba(255,255,255,.55)" strokeWidth={1.3} />;
-                })}
-
-                {/* Cut-off barriers, same interpolation, diamond to distinguish them. */}
-                {projection && barriers.map((b, i) => {
-                  const legRow = orderedLegs.find((l) => l.leg === b.leg);
-                  if (!legRow?.coordinates.length) return null;
-                  const f = Math.max(0, Math.min(1, (b.km * 1000) / legRow.distance_m));
-                  const c = legRow.coordinates[Math.round(f * (legRow.coordinates.length - 1))];
-                  const [x, y] = projection.project(c[0], c[1]);
-                  return <rect key={`${b.name}-${i}`} x={x - 3.6} y={y - 3.6} width={7.2} height={7.2} fill="none" stroke="#E4622F" strokeWidth={1.5} transform={`rotate(45 ${x} ${y})`} />;
-                })}
-
-                {/* The real elevation series for the bike leg. */}
-                {chart && <path d={chart.area} fill="url(#cr-fill)" />}
-                {chart && <path d={chart.line} fill="none" stroke="#E4622F" strokeWidth={1.8} strokeLinejoin="round" />}
-                {chart && hoverIndex != null && pointCount > 1 && (
-                  <line x1={((hoverIndex / (pointCount - 1)) * MAP_W).toFixed(1)} y1={ELEV_TOP - 8} x2={((hoverIndex / (pointCount - 1)) * MAP_W).toFixed(1)} y2={MAP_H} stroke="rgba(255,255,255,.42)" strokeWidth={1} />
-                )}
-              </svg>
-
-              <div className="mono" style={{ position: "absolute", left: 20, bottom: 16, fontSize: 9.5, letterSpacing: ".12em", color: "#6B665B" }}>
-                {chartLeg} PROFILE · {chartProfile ? `${formatKm(chartProfile.distance_m)} KM · ${formatMetres(chartProfile.gain_m)} M GAIN · MAX ${formatMetres(chartProfile.max_m)} M` : "NO PROFILE"}
+        {/* The elevation profile stays a chart, because that is what it is:
+            distance along the leg against height, with the aid stations and
+            cut-offs on it. The map answers "where"; this answers "how hard,
+            and where does it get hard". */}
+        {chart && (
+          <div
+            onMouseMove={onHover}
+            onMouseLeave={() => setHoverIndex(null)}
+            style={{ position: "relative", background: "#15140F", borderRadius: 12, marginTop: 14, padding: "20px 24px 18px", cursor: "crosshair" }}
+          >
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 20 }}>
+              <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".16em", color: "rgba(251,248,242,.4)" }}>
+                {chartLeg} ELEVATION
               </div>
-              <div className="mono" style={{ position: "absolute", right: 20, top: 18, display: "flex", gap: 16, fontSize: 11, color: "#FBF8F2" }}>
+              <div className="mono" style={{ display: "flex", gap: 16, fontSize: 11, color: "#FBF8F2" }}>
                 {hoverKm != null && <span>{hoverKm.toFixed(1)} km</span>}
                 {hoverH != null && <span>{Math.round(hoverH)} m</span>}
               </div>
             </div>
-
-            <div style={{ borderLeft: "1px solid rgba(255,255,255,.09)", padding: "22px 24px", color: "#FBF8F2" }}>
-              <div className="mono" style={{ fontSize: 10, letterSpacing: ".15em", color: "#5A554C" }}>ON THIS MAP</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 14 }}>
-                {[
-                  ...orderedLegs.map((l) => ({
-                    label: `${l.leg.charAt(0)}${l.leg.slice(1).toLowerCase()} route`,
-                    swatch: <span style={{ width: 14, height: 2, background: l.leg === "BIKE" ? "rgba(255,255,255,.5)" : "rgba(255,255,255,.28)" }} />,
-                    status: `${formatKm(l.distance_m)} km`,
-                  })),
-                  { label: "Aid stations", swatch: <span style={{ width: 8, height: 8, border: "1.4px solid rgba(255,255,255,.6)", borderRadius: "50%" }} />, status: String(aid.length) },
-                  { label: "Cut-off points", swatch: <span style={{ width: 8, height: 8, border: "1.4px solid #E4622F", transform: "rotate(45deg)" }} />, status: String(barriers.length) },
-                ].map((layer, i, arr) => (
-                  <div key={layer.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,.06)" : undefined }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13.5, color: "#CFC9BC" }}>{layer.swatch}{layer.label}</span>
-                    <span className="mono" style={{ fontSize: 10, color: "#7CC08F" }}>{layer.status}</span>
-                  </div>
-                ))}
+            <svg
+              viewBox={`0 0 ${MAP_W} 130`}
+              style={{ display: "block", width: "100%", height: "auto", marginTop: 14 }}
+              role="img"
+              aria-label={`Elevation profile for the ${chartLeg.toLowerCase()} leg of ${course.name}`}
+            >
+              <defs>
+                <linearGradient id="cr-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#E4622F" stopOpacity={0.26} />
+                  <stop offset="100%" stopColor="#E4622F" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <path d={chart.area} fill="url(#cr-fill)" />
+              <path d={chart.line} fill="none" stroke="#E4622F" strokeWidth={1.7} strokeLinejoin="round" />
+              {hoverIndex != null && pointCount > 1 && (
+                <line
+                  x1={((hoverIndex / (pointCount - 1)) * MAP_W).toFixed(1)}
+                  y1={0}
+                  x2={((hoverIndex / (pointCount - 1)) * MAP_W).toFixed(1)}
+                  y2={130}
+                  stroke="rgba(255,255,255,.42)"
+                  strokeWidth={1}
+                />
+              )}
+            </svg>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, marginTop: 12 }}>
+              <div style={{ fontSize: 13, lineHeight: 1.5, color: "#96907F", maxWidth: 620 }}>
+                {hoverSegment
+                  ? `${hoverSegment.name} · ${hoverSegment.from_km.toFixed(1)}–${hoverSegment.to_km.toFixed(1)} km · ${formatMetres(hoverSegment.elevation_gain_m)} m gain · ${hoverSegment.surface_quality.replace(/_/g, " ")}`
+                  : "Move across the profile to read a segment."}
               </div>
-              <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,.09)" }}>
-                <div className="mono" style={{ fontSize: 10, letterSpacing: ".15em", color: "#5A554C" }}>AT THIS POINT</div>
-                <div className="mono" style={{ marginTop: 14, fontSize: 32, letterSpacing: "-.02em" }}>
-                  {hoverKm == null ? "—" : hoverKm.toFixed(1)}
-                  <span style={{ fontSize: 14, color: "#5A554C" }}> km</span>
-                </div>
-                <div style={{ marginTop: 10, fontSize: 13.5, lineHeight: 1.55, color: "#96907F" }}>
-                  {hoverSegment
-                    ? `${hoverSegment.name} · ${hoverSegment.from_km.toFixed(1)}–${hoverSegment.to_km.toFixed(1)} km · ${formatMetres(hoverSegment.elevation_gain_m)} m gain · ${hoverSegment.surface_quality.replace(/_/g, " ")}`
-                    : "Move across the profile to read a segment."}
-                </div>
-              </div>
-              <OsmAttribution attribution={bundle.attribution} tone="dark" style={{ marginTop: 20 }} />
+              <OsmAttribution attribution={bundle.attribution} tone="dark" style={{ flex: "none" }} />
             </div>
           </div>
-        </div>
+        )}
       </section>
+
 
       {/* ---------------- Sub-nav ---------------- */}
       <div style={{ position: "sticky", top: 68, zIndex: 40, background: "rgba(241,238,232,.92)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(21,20,15,.10)", marginTop: 44 }}>
