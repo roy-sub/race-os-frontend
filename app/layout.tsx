@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ServiceWorker } from "@/components/ServiceWorker";
 import { BootLoader } from "@/components/BootLoader";
 import { ScrollFx } from "@/components/ScrollFx";
 import { Providers } from "./providers";
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             with a header and a nav; without this a keyboard or screen-reader
             user walks through both again on every navigation. */}
         <a href="#content" className="skip-link">Skip to content</a>
+        <ServiceWorker />
         <BootLoader />
         <ScrollFx />
         <Providers>

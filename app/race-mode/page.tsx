@@ -13,7 +13,8 @@
  * solved plan.
  */
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { lastPlan, loadPlan, rememberLastPlan, savePlan, useOnline, useRaceDayDisplay, useWakeLock, type SavedPlan } from "@/lib/raceMode";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Mark } from "@/components/Mark";
@@ -197,8 +198,44 @@ function BagsScreen({ payload }: { payload: RaceModePayload }) {
 function RaceModeBody({ planId }: { planId: string | null }) {
   const plans = useMyPlans(!planId);
   const fallback = (plans.data?.active ?? []).find((card) => card.plan_id)?.plan_id ?? null;
-  const id = planId ?? fallback;
-  const { data, isPending, error } = useRaceMode(id);
+  /* `lastPlan()` is the offline path: with no `?plan=` and no network,
+     `my-plans` cannot answer, and the saved copy is keyed by the id it would
+     have returned. Read once on mount so the first render already has it. */
+  const remembered = useSyncExternalStore(
+    // Nothing changes it during a session, so the subscription is a no-op; the
+    // server snapshot is null because the export prerenders without storage.
+    () => () => {},
+    lastPlan,
+    () => null,
+  );
+  const id = planId ?? fallback ?? remembered;
+  const live = useRaceMode(id);
+  const online = useOnline();
+  const display = useRaceDayDisplay();
+  const wake = useWakeLock(true);
+
+  /* The last good payload, kept on the device. Read once when the screen
+     opens so it is already in hand if the signal goes mid-race, and written
+     every time a fresh one arrives. */
+  const [saved, setSaved] = useState<SavedPlan<RaceModePayload> | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    void loadPlan<RaceModePayload>(id).then(setSaved);
+  }, [id]);
+  useEffect(() => {
+    if (id && live.data) {
+      void savePlan(id, live.data);
+      rememberLastPlan(id);
+    }
+  }, [id, live.data]);
+
+  /* Live wins whenever it exists. The saved copy is a fallback, never a
+     preference — a stale plan that looks current is the one thing this
+     product must not do. */
+  const data = live.data ?? saved?.payload ?? null;
+  const showingSaved = !live.data && saved != null;
+  const isPending = live.isPending && !data;
+  const error = data ? null : live.error;
 
   const pendingDrift = useMemo(() => data?.pending_drift ?? [], [data]);
 
@@ -230,7 +267,10 @@ function RaceModeBody({ planId }: { planId: string | null }) {
   }
 
   return (
-    <>
+    /* `data-race-display` drives the type and target sizes in globals.css,
+       so one attribute scales the whole screen rather than every component
+       growing its own idea of "large". */
+    <div data-race-display={display.big ? "large" : undefined}>
       <div style={{ ...CARD, padding: "22px 26px", marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
           <div>
@@ -239,8 +279,36 @@ function RaceModeBody({ planId }: { planId: string | null }) {
               {formatLongDate(data.race.event_date)} · {data.course.place} · {data.race.start_time_local} start
             </div>
           </div>
-          <div className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "#3E7B55", whiteSpace: "nowrap" }}>
-            {data.offline.complete ? "CACHED IN FULL · NO REQUESTS ON RACE DAY" : "PARTIAL CACHE"}
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            {/* Big type and bigger targets. A race plan is read with wet hands,
+                in daylight, at heart rate — the default type is a desk size. */}
+            <button
+              type="button"
+              onClick={display.toggle}
+              aria-pressed={display.big}
+              className="mono"
+              style={{ minHeight: 44, padding: "0 14px", borderRadius: 7, border: "1px solid rgba(21,20,15,.18)", background: display.big ? "#15140F" : "transparent", color: display.big ? "#FBF8F2" : "#302C24", fontSize: 9.5, letterSpacing: ".13em", cursor: "pointer" }}
+            >
+              {display.big ? "LARGE TYPE ON" : "LARGE TYPE"}
+            </button>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: ".13em", whiteSpace: "nowrap", color: showingSaved ? "#A0701A" : "#3E7B55" }}>
+              {/* Never "cached in full" while showing a saved copy: the athlete
+                  needs to know which of the two they are looking at, and when
+                  it was taken. */}
+              {showingSaved
+                ? `SAVED COPY · ${new Date(saved!.savedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`
+                : data.offline.complete
+                  ? "CACHED IN FULL · NO REQUESTS ON RACE DAY"
+                  : "PARTIAL CACHE"}
+            </div>
+            {!online && (
+              <span className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "#A0701A" }}>OFFLINE</span>
+            )}
+            {!wake.supported && (
+              <span className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "#8C8578" }}>
+                SET YOUR SCREEN TIMEOUT LONG
+              </span>
+            )}
           </div>
         </div>
         {pendingDrift.length > 0 && (
@@ -271,7 +339,7 @@ function RaceModeBody({ planId }: { planId: string | null }) {
       <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "#B8B1A2", marginTop: 20 }}>
         {data.bundle.attribution.toUpperCase()}
       </div>
-    </>
+    </div>
   );
 }
 

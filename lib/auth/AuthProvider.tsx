@@ -15,7 +15,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { client, unwrap } from "@/lib/api/client";
-import { refreshAccessToken, setSignOutHandler } from "@/lib/api/http";
+import { refreshAccessToken, refreshFailedOffline, setSignOutHandler } from "@/lib/api/http";
 import type { components } from "@/lib/api/schema";
 import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/api/tokenStore";
 
@@ -42,6 +42,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const forgetSession = useCallback(() => {
     clearAccessToken();
+    // Every path that genuinely ends a session comes through here — sign-out,
+    // a refused refresh, a 401 replay — so this is the one place the remembered
+    // identity has to go. Leaving it would let an ended session still put a
+    // name on the screen the next time the device was offline.
+    forgetRememberedUser();
     setUser(null);
     setStatus("anonymous");
     // Anything cached was fetched as the previous user. Dropping it is not an
@@ -62,6 +67,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const token = await refreshAccessToken();
       if (cancelled) return;
       if (!token) {
+        /* Unreachable is not the same as refused.
+           Race Mode's whole promise is that the plan is on the phone, and
+           sending an athlete to a login screen they cannot complete — in a
+           field, with no signal, ninety seconds before their wave — breaks it
+           completely. So a *network* failure restores the last known identity
+           and carries on; the screens that matter read from IndexedDB anyway.
+
+           This is not a way to stay signed in indefinitely. The moment the
+           network returns, the refresh runs for real, and a session that has
+           actually ended is refused and cleared on that path. */
+        const remembered = refreshFailedOffline() ? rememberedUser() : null;
+        if (remembered) {
+          setUser(remembered);
+          setStatus("authenticated");
+          return;
+        }
         setStatus("anonymous");
         return;
       }
@@ -77,6 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // unlucky race between a query and a token left that on screen for the
         // rest of the session, because nothing would ever refetch it.
         queryClient.clear();
+        rememberUser(me);
         setUser(me);
         setStatus("authenticated");
       } catch {
@@ -158,4 +180,35 @@ export function useAuth(): AuthContextValue {
   const value = useContext(AuthContext);
   if (!value) throw new Error("useAuth must be used inside <AuthProvider>.");
   return value;
+}
+
+/* The last signed-in identity, kept only so an offline boot can show the
+   athlete their own name instead of a login form. Never a credential — the
+   access token still has to be refreshed against the server before any request
+   succeeds, so this cannot be used to reach anybody's data. */
+const REMEMBERED = "raceos:last-user";
+
+function rememberUser(user: User): void {
+  try {
+    localStorage.setItem(REMEMBERED, JSON.stringify(user));
+  } catch {
+    /* private browsing: the offline boot simply falls back to the login form */
+  }
+}
+
+function rememberedUser(): User | null {
+  try {
+    const raw = localStorage.getItem(REMEMBERED);
+    return raw ? (JSON.parse(raw) as User) : null;
+  } catch {
+    return null;
+  }
+}
+
+function forgetRememberedUser(): void {
+  try {
+    localStorage.removeItem(REMEMBERED);
+  } catch {
+    /* nothing to forget */
+  }
 }

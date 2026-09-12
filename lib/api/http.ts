@@ -48,6 +48,21 @@ export function setSignOutHandler(handler: SignOutHandler): void {
  */
 let refreshInFlight: Promise<string | null> | null = null;
 
+/**
+ * Whether the last refresh failed because the network was unreachable, as
+ * opposed to being refused.
+ *
+ * The distinction is the whole point. "The server said no" means the session
+ * is over; "I could not reach the server" means nothing about the session at
+ * all, and treating the two alike signed an athlete out of their own cached
+ * plan the moment they lost signal — which is precisely race morning.
+ */
+export function refreshFailedOffline(): boolean {
+  return lastRefreshOffline;
+}
+
+let lastRefreshOffline = false;
+
 export function refreshAccessToken(): Promise<string | null> {
   refreshInFlight ??= (async () => {
     try {
@@ -56,6 +71,7 @@ export function refreshAccessToken(): Promise<string | null> {
         credentials: "include",
         headers: { Accept: "application/json" },
       });
+      lastRefreshOffline = false;
       if (!response.ok) return null;
       const body = (await response.json()) as { access_token?: unknown };
       const token = typeof body.access_token === "string" ? body.access_token : null;
@@ -64,6 +80,7 @@ export function refreshAccessToken(): Promise<string | null> {
     } catch {
       // A network failure is not proof the session is dead, so it does not sign
       // the user out here — the caller's replay will surface the real error.
+      lastRefreshOffline = true;
       return null;
     } finally {
       refreshInFlight = null;

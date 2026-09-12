@@ -375,3 +375,25 @@ input[type=range]::-moz-range-thumb{ width:20px; height:20px; border-radius:50%;
 
 /* A target for it, and a landmark for assistive technology. */
 main:focus { outline: none; }
+
+/* ---------------------------------------------------------------------------
+   Race-day display mode.
+   ---------------------------------------------------------------------------
+   One attribute scales the whole screen, rather than every component growing
+   its own idea of "large". The plan is read with wet hands, in daylight, at
+   heart rate, on a phone strapped to a bar — the default type is a desk size.
+
+   Targets go to 44px, which is the WCAG 2.5.5 figure and also just what a
+   thumb needs when the rest of you is busy. */
+[data-race-display="large"] {
+  font-size: 125%;
+}
+[data-race-display="large"] button,
+[data-race-display="large"] a,
+[data-race-display="large"] [role="button"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+[data-race-display="large"] .mono {
+  letter-spacing: .1em;
+}
