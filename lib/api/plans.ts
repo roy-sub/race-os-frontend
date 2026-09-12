@@ -94,6 +94,38 @@ export function useCreateRace() {
   });
 }
 
+export type Forecast = components["schemas"]["ForecastOut"];
+
+/**
+ * The forecast for this race's start hour, **as it stands now**.
+ *
+ * Not the plan's `forecast_snapshot`. That one is frozen at solve time and
+ * stays frozen — a plan's numbers do not change under the athlete. This is the
+ * live reading to put beside it, so a plan solved against a forecast that has
+ * since moved eight degrees says so instead of looking current.
+ *
+ * `available: false` is a normal answer, not a failure: the race may be beyond
+ * the forecast horizon, or the provider may be down. Both arrive as a 200 with
+ * a reason, so this query only enters its error state for a real fault.
+ *
+ * Refetched no more often than the backend's own cache would answer from — a
+ * forecast that moves within five minutes is the provider being noisy, not the
+ * weather changing.
+ */
+export function useRaceForecast(raceId: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.races.forecast(raceId ?? ""),
+    enabled: Boolean(raceId),
+    staleTime: 5 * 60 * 1000,
+    queryFn: () =>
+      unwrap(
+        client.GET("/api/v1/races/{race_id}/forecast", {
+          params: { path: { race_id: raceId! } },
+        }),
+      ),
+  });
+}
+
 // --- plans -----------------------------------------------------------------
 
 export function usePlan(planId: string | null) {

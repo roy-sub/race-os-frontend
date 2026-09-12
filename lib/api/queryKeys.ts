@@ -24,6 +24,7 @@ export const queryKeys = {
     all: ["races"] as const,
     list: () => [...queryKeys.races.all, "list"] as const,
     detail: (id: string) => [...queryKeys.races.all, "detail", id] as const,
+    forecast: (id: string) => [...queryKeys.races.all, "forecast", id] as const,
   },
   plans: {
     all: ["plans"] as const,

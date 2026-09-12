@@ -1488,6 +1488,7 @@
           "constraints"
         ],
         "summary": "Current values with provenance",
+        "description": "Staleness rides on each row's ``stale`` flag, not in a warnings array.\n\nThis response is a list, so there is no top-level object for a caveat to\nsit in \u2014 and a per-row flag is the better surface anyway, because the\nscreen rendering it puts the warning beside the value it is about rather\nthan in a banner the reader has to match up by hand. The ``warnings``\narray is for responses where the athlete cannot see which input is at\nfault: a solved plan carries it (see ``GET /plans/{id}``), a table of the\ninputs themselves does not need it.",
         "operationId": "list_constraints_api_v1_constraints_get",
         "parameters": [
           {
@@ -2704,6 +2705,66 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/races/{race_id}/forecast": {
+      "get": {
+        "tags": [
+          "races"
+        ],
+        "summary": "The live forecast for this race's start hour",
+        "description": "The forecast as it stands **now**, beside the one the plan was solved on.\n\nA solved plan freezes its ``forecast_snapshot`` and keeps it frozen \u2014 Law 3\nsays a plan's numbers do not change under the athlete. That is the right\nbehaviour and it leaves a gap: nothing showed what the weather is actually\ndoing, so an athlete could not see that the plan they are holding was\nsolved against a forecast that has since moved eight degrees. This closes\nit without touching the plan.\n\nNever 4xx for an absent forecast. \"No forecast\" is an ordinary state with\nthree ordinary causes, each of which wants different words on the screen,\nand a 404 here would say the race does not exist.\n\nThe response commits because ``fetch_forecast`` writes the provider's reply\ninto the TTL cache. That is a read-through cache doing its job on a GET,\nnot a mutation: dropping the write would re-fetch on every render.",
+        "operationId": "get_race_forecast_api_v1_races__race_id__forecast_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForecastOut"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -9404,6 +9465,30 @@
         ],
         "title": "EntitlementOut"
       },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "INVALID_INPUT",
+          "INFEASIBLE",
+          "OVER_CEILING",
+          "UPLOAD_FAILED",
+          "STALE_DATA",
+          "PARTIAL_DATA",
+          "FREEZE_WINDOW",
+          "FORBIDDEN_STRUCTURAL",
+          "UNAUTHENTICATED",
+          "FORBIDDEN",
+          "PAYMENT_REQUIRED",
+          "NOT_FOUND",
+          "CONFLICT",
+          "SOLVER_TIMEOUT",
+          "RATE_LIMITED",
+          "INTERNAL_ERROR",
+          "SERVICE_UNAVAILABLE"
+        ],
+        "title": "ErrorCode",
+        "description": "Machine-readable classification. The frontend maps these to its copy."
+      },
       "EstimateOut": {
         "properties": {
           "key": {
@@ -9462,6 +9547,152 @@
           "NOT_SOLVED"
         ],
         "title": "Feasibility"
+      },
+      "ForecastOut": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          },
+          "days_away": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Away"
+          },
+          "horizon_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Horizon Hours"
+          },
+          "temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temp C"
+          },
+          "humidity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Humidity"
+          },
+          "wind_speed_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wind Speed Ms"
+          },
+          "wind_dir_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wind Dir Deg"
+          },
+          "conditions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conditions"
+          },
+          "water_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Water Temp C"
+          },
+          "pressure_hpa": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pressure Hpa"
+          },
+          "cloud_cover_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cloud Cover Pct"
+          },
+          "for_local_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "For Local Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "ForecastOut",
+        "description": "The forecast for a race's start hour, as it stands right now.\n\nDeliberately **not** the plan's ``forecast_snapshot``. That one is frozen\nat solve time and must stay frozen \u2014 Law 3 says a plan's numbers do not\nchange under the athlete. This is the live reading beside it, so the\ndifference between the two is visible and the athlete can decide whether\nto re-solve.\n\n``available`` is false rather than the response being a 404, because \"no\nforecast\" is an ordinary, expected state with several ordinary causes, and\neach of them wants different words on the screen. A 404 would say the race\ndoes not exist."
       },
       "ForgotPasswordRequest": {
         "properties": {
@@ -10242,6 +10473,50 @@
             ],
             "title": "Projected Label"
           },
+          "t1_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T1 Minutes"
+          },
+          "t2_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T2 Minutes"
+          },
+          "t1_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T1 Label"
+          },
+          "t2_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T2 Label"
+          },
           "feasibility": {
             "$ref": "#/components/schemas/Feasibility"
           },
@@ -10456,6 +10731,13 @@
           "forecast_snapshot": {
             "type": "object",
             "title": "Forecast Snapshot"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ResponseWarningOut"
+            },
+            "type": "array",
+            "title": "Warnings"
           }
         },
         "type": "object",
@@ -10601,6 +10883,50 @@
               }
             ],
             "title": "Projected Label"
+          },
+          "t1_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T1 Minutes"
+          },
+          "t2_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T2 Minutes"
+          },
+          "t1_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T1 Label"
+          },
+          "t2_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T2 Label"
           },
           "feasibility": {
             "$ref": "#/components/schemas/Feasibility"
@@ -11888,6 +12214,35 @@
           "status"
         ],
         "title": "ResolveRequest"
+      },
+      "ResponseWarningOut": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ResponseWarningOut",
+        "description": "A non-blocking caveat riding alongside a successful response.\n\nThe distinction from an error is load-bearing and is why this exists as a\nfield rather than as a status code: an error *replaces* the response, a\nwarning *accompanies* it. A plan built on a six-month-old FTP is still a\nplan, and refusing to return it would serve the athlete worse than\nreturning it with the caveat attached.\n\nOnly the codes in :data:`~raceos.api.errors.WARNING_CODES` can appear here;\n:meth:`~raceos.api.errors.WarningCollector.add` refuses anything else."
       },
       "RiskLevel": {
         "type": "string",

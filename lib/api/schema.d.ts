@@ -497,7 +497,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Current values with provenance */
+        /**
+         * Current values with provenance
+         * @description Staleness rides on each row's ``stale`` flag, not in a warnings array.
+         *
+         *     This response is a list, so there is no top-level object for a caveat to
+         *     sit in — and a per-row flag is the better surface anyway, because the
+         *     screen rendering it puts the warning beside the value it is about rather
+         *     than in a banner the reader has to match up by hand. The ``warnings``
+         *     array is for responses where the athlete cannot see which input is at
+         *     fault: a solved plan carries it (see ``GET /plans/{id}``), a table of the
+         *     inputs themselves does not need it.
+         */
         get: operations["list_constraints_api_v1_constraints_get"];
         put?: never;
         post?: never;
@@ -791,6 +802,41 @@ export interface paths {
          *     silently recomputing behind them is the thing Law 3 forbids.
          */
         patch: operations["update_race_api_v1_races__race_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/races/{race_id}/forecast": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The live forecast for this race's start hour
+         * @description The forecast as it stands **now**, beside the one the plan was solved on.
+         *
+         *     A solved plan freezes its ``forecast_snapshot`` and keeps it frozen — Law 3
+         *     says a plan's numbers do not change under the athlete. That is the right
+         *     behaviour and it leaves a gap: nothing showed what the weather is actually
+         *     doing, so an athlete could not see that the plan they are holding was
+         *     solved against a forecast that has since moved eight degrees. This closes
+         *     it without touching the plan.
+         *
+         *     Never 4xx for an absent forecast. "No forecast" is an ordinary state with
+         *     three ordinary causes, each of which wants different words on the screen,
+         *     and a 404 here would say the race does not exist.
+         *
+         *     The response commits because ``fetch_forecast`` writes the provider's reply
+         *     into the TTL cache. That is a read-through cache doing its job on a GET,
+         *     not a mutation: dropping the write would re-fetch on every render.
+         */
+        get: operations["get_race_forecast_api_v1_races__race_id__forecast_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/plans/{plan_id}/export": {
@@ -2970,6 +3016,12 @@ export interface components {
              */
             purchasable_per_race: boolean;
         };
+        /**
+         * ErrorCode
+         * @description Machine-readable classification. The frontend maps these to its copy.
+         * @enum {string}
+         */
+        ErrorCode: "INVALID_INPUT" | "INFEASIBLE" | "OVER_CEILING" | "UPLOAD_FAILED" | "STALE_DATA" | "PARTIAL_DATA" | "FREEZE_WINDOW" | "FORBIDDEN_STRUCTURAL" | "UNAUTHENTICATED" | "FORBIDDEN" | "PAYMENT_REQUIRED" | "NOT_FOUND" | "CONFLICT" | "SOLVER_TIMEOUT" | "RATE_LIMITED" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE";
         /** EstimateOut */
         EstimateOut: {
             /** Key */
@@ -2998,6 +3050,49 @@ export interface components {
          * @enum {string}
          */
         Feasibility: "CLEAR" | "TIGHT" | "STALE" | "NOT_SOLVED";
+        /**
+         * ForecastOut
+         * @description The forecast for a race's start hour, as it stands right now.
+         *
+         *     Deliberately **not** the plan's ``forecast_snapshot``. That one is frozen
+         *     at solve time and must stay frozen — Law 3 says a plan's numbers do not
+         *     change under the athlete. This is the live reading beside it, so the
+         *     difference between the two is visible and the athlete can decide whether
+         *     to re-solve.
+         *
+         *     ``available`` is false rather than the response being a 404, because "no
+         *     forecast" is an ordinary, expected state with several ordinary causes, and
+         *     each of them wants different words on the screen. A 404 would say the race
+         *     does not exist.
+         */
+        ForecastOut: {
+            /** Available */
+            available: boolean;
+            /** Unavailable Reason */
+            unavailable_reason?: string | null;
+            /** Days Away */
+            days_away?: number | null;
+            /** Horizon Hours */
+            horizon_hours?: number | null;
+            /** Temp C */
+            temp_c?: number | null;
+            /** Humidity */
+            humidity?: number | null;
+            /** Wind Speed Ms */
+            wind_speed_ms?: number | null;
+            /** Wind Dir Deg */
+            wind_dir_deg?: number | null;
+            /** Conditions */
+            conditions?: string | null;
+            /** Water Temp C */
+            water_temp_c?: number | null;
+            /** Pressure Hpa */
+            pressure_hpa?: number | null;
+            /** Cloud Cover Pct */
+            cloud_cover_pct?: number | null;
+            /** For Local Time */
+            for_local_time?: string | null;
+        };
         /** ForgotPasswordRequest */
         ForgotPasswordRequest: {
             /**
@@ -3302,6 +3397,14 @@ export interface components {
             projected_minutes: number | null;
             /** Projected Label */
             projected_label?: string | null;
+            /** T1 Minutes */
+            t1_minutes?: number | null;
+            /** T2 Minutes */
+            t2_minutes?: number | null;
+            /** T1 Label */
+            t1_label?: string | null;
+            /** T2 Label */
+            t2_label?: string | null;
             feasibility: components["schemas"]["Feasibility"];
             /** Worst Margin Minutes */
             worst_margin_minutes: number | null;
@@ -3348,6 +3451,8 @@ export interface components {
             constraint_refs?: components["schemas"]["ConstraintRefOut"][];
             /** Forecast Snapshot */
             forecast_snapshot?: Record<string, never>;
+            /** Warnings */
+            warnings?: components["schemas"]["ResponseWarningOut"][];
         };
         /**
          * PlanDraftPatch
@@ -3390,6 +3495,14 @@ export interface components {
             projected_minutes: number | null;
             /** Projected Label */
             projected_label?: string | null;
+            /** T1 Minutes */
+            t1_minutes?: number | null;
+            /** T2 Minutes */
+            t2_minutes?: number | null;
+            /** T1 Label */
+            t1_label?: string | null;
+            /** T2 Label */
+            t2_label?: string | null;
             feasibility: components["schemas"]["Feasibility"];
             /** Worst Margin Minutes */
             worst_margin_minutes: number | null;
@@ -3824,6 +3937,26 @@ export interface components {
         /** ResolveRequest */
         ResolveRequest: {
             status: components["schemas"]["CrowdStatus"];
+        };
+        /**
+         * ResponseWarningOut
+         * @description A non-blocking caveat riding alongside a successful response.
+         *
+         *     The distinction from an error is load-bearing and is why this exists as a
+         *     field rather than as a status code: an error *replaces* the response, a
+         *     warning *accompanies* it. A plan built on a six-month-old FTP is still a
+         *     plan, and refusing to return it would serve the athlete worse than
+         *     returning it with the caveat attached.
+         *
+         *     Only the codes in :data:`~raceos.api.errors.WARNING_CODES` can appear here;
+         *     :meth:`~raceos.api.errors.WarningCollector.add` refuses anything else.
+         */
+        ResponseWarningOut: {
+            code: components["schemas"]["ErrorCode"];
+            /** Message */
+            message: string;
+            /** Field */
+            field?: string | null;
         };
         /**
          * RiskLevel
@@ -5766,6 +5899,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RaceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_race_forecast_api_v1_races__race_id__forecast_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                race_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForecastOut"];
                 };
             };
             /** @description Validation Error */

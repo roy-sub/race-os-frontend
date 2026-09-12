@@ -15,7 +15,7 @@ import { ApiError } from "@/lib/api/errors";
 import { client, unwrap } from "@/lib/api/client";
 import { useQuery } from "@tanstack/react-query";
 import { useRecon } from "@/lib/api/courses";
-import { asSolved, usePlan, type SolvedPlan } from "@/lib/api/plans";
+import { asSolved, usePlan, useRaceForecast, type SolvedPlan } from "@/lib/api/plans";
 import { downloadExport, useExportManifest, type ExportEntry } from "@/lib/api/exports";
 import {
   LEG_COLOR, elevationPath, formatClock, formatKm, formatMargin, formatMetres, sortLegs,
@@ -679,7 +679,8 @@ function PlanBody({
                   );
                 })()}
               </Reveal>
-              <Reveal delay={0.08} style={{ background: "#FBF8F2", borderRadius: 12, padding: "28px 30px" }}>
+              <LiveForecastCard plan={plan} />
+              <Reveal delay={0.08} style={{ gridColumn: "1 / -1", background: "#FBF8F2", borderRadius: 12, padding: "28px 30px" }}>
                 <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".15em", color: "#8C8578" }}>READINESS</div>
                 <div className="mono" style={{ fontSize: 44, marginTop: 18 }}>
                   {plan.readiness_fraction == null ? "—" : `${Math.round(plan.readiness_fraction * 100)}%`}
@@ -703,12 +704,17 @@ function PlanBody({
               HEAT_ROWS were invented, as were the median air temperature, the
               wetsuit likelihood and "nine of eleven editions".
             */
-            <div style={{ padding: "40px 34px", background: "#FBF8F2", border: "1px dashed rgba(21,20,15,.2)", borderRadius: 12 }}>
-              <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>NO SNAPSHOT</div>
-              <p style={{ margin: "14px 0 0", maxWidth: 560, fontSize: 16, lineHeight: 1.55, color: "#5C574B" }}>
-                This plan was solved without a forecast attached. A forecast is an improvement to a
-                plan, not a precondition for one — it is picked up on the next re-solve.
-              </p>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 16 }}>
+              <div style={{ padding: "40px 34px", background: "#FBF8F2", border: "1px dashed rgba(21,20,15,.2)", borderRadius: 12 }}>
+                <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".17em", color: "#A8A192" }}>NO SNAPSHOT</div>
+                <p style={{ margin: "14px 0 0", maxWidth: 560, fontSize: 16, lineHeight: 1.55, color: "#5C574B" }}>
+                  This plan was solved without a forecast attached. A forecast is an improvement to a
+                  plan, not a precondition for one — it is picked up on the next re-solve.
+                </p>
+              </div>
+              {/* The plan has no snapshot, but the race still has a date and a
+                  place, so the live reading is exactly what this case needs. */}
+              <LiveForecastCard plan={plan} />
             </div>
           )}
         </section>
@@ -717,6 +723,114 @@ function PlanBody({
       {/* ---------------- Exports ---------------- */}
       {tab === "exports" && <ExportsTab plan={plan} />}
     </div>
+  );
+}
+
+/**
+ * The forecast as it stands now, beside the one the plan was solved on.
+ *
+ * The snapshot the plan carries is frozen at solve time and stays frozen — a
+ * plan's numbers do not change under the athlete. That is the right behaviour
+ * and it leaves a gap this card fills: without it, a plan solved a fortnight
+ * ago against a 19 °C forecast shows 19 °C on race week and looks current.
+ *
+ * `available: false` arrives as a 200 with a reason, because "no forecast" has
+ * several ordinary causes and each wants different words. Nothing here invents
+ * a number: when there is no live reading, the card says why and stops.
+ */
+function LiveForecastCard({ plan }: { plan: SolvedPlan }) {
+  const { data, isPending, error } = useRaceForecast(plan.race_id);
+  const snapshot = (plan.forecast_snapshot ?? {}) as Record<string, number | string | null>;
+
+  const shift = (key: "temp_c" | "wind_speed_ms" | "water_temp_c"): number | null => {
+    const then = snapshot[key];
+    const now = data?.[key];
+    if (typeof then !== "number" || typeof now !== "number") return null;
+    return now - then;
+  };
+
+  const tempShift = shift("temp_c");
+
+  return (
+    <Reveal delay={0.04} style={{ background: "#FBF8F2", borderRadius: 12, padding: "28px 30px" }}>
+      <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".15em", color: "#8C8578" }}>
+        FORECAST NOW
+      </div>
+
+      {isPending && <Skeleton style={{ height: 150, marginTop: 20, borderRadius: 8 }} />}
+
+      {/* A live forecast is an improvement, never a precondition. A fault
+          fetching it must not take the tab down with it. */}
+      {!isPending && error && (
+        <p style={{ margin: "20px 0 0", fontSize: 15, lineHeight: 1.55, color: "#6B6455" }}>
+          The current forecast could not be read just now. The plan above is unaffected —
+          it carries its own snapshot.
+        </p>
+      )}
+
+      {!isPending && !error && data && !data.available && (
+        <p style={{ margin: "20px 0 0", fontSize: 15, lineHeight: 1.55, color: "#6B6455" }}>
+          {data.unavailable_reason === "beyond_horizon"
+            ? `Race day is ${data.days_away} days out. A forecast that far ahead is noise, so we do not show one — it arrives about ${Math.round((data.horizon_hours ?? 0) / 24)} days before the start.`
+            : "No current forecast is reachable right now. Your plan is unaffected — it carries the snapshot it was solved on."}
+        </p>
+      )}
+
+      {!isPending && !error && data?.available && (
+        <>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginTop: 20 }}>
+            <span className="mono" style={{ fontSize: 62, lineHeight: 0.85, letterSpacing: "-.05em" }}>
+              {typeof data.temp_c === "number" ? `${data.temp_c}°` : "—"}
+            </span>
+            {tempShift !== null && Math.abs(tempShift) >= 0.5 && (
+              <span
+                className="mono"
+                style={{ fontSize: 15, color: Math.abs(tempShift) >= 3 ? "#E4622F" : "#8C8578" }}
+              >
+                {tempShift > 0 ? "+" : "−"}
+                {Math.abs(tempShift).toFixed(1)}° vs the plan
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "20px 26px", marginTop: 28, paddingTop: 24, borderTop: "1px solid rgba(21,20,15,.08)" }}>
+            {[
+              typeof data.wind_speed_ms === "number"
+                ? { l: "WIND", v: `${(data.wind_speed_ms * 3.6).toFixed(0)} km/h` }
+                : null,
+              typeof data.humidity === "number" ? { l: "HUMIDITY", v: `${data.humidity}%` } : null,
+              typeof data.water_temp_c === "number" ? { l: "WATER", v: `${data.water_temp_c}°C` } : null,
+              typeof data.conditions === "string"
+                ? { l: "CONDITIONS", v: data.conditions.replace(/_/g, " ") }
+                : null,
+            ]
+              .filter((row): row is { l: string; v: string } => row !== null)
+              .map((row) => (
+                <div key={row.l}>
+                  <div className="mono" style={{ fontSize: 9, letterSpacing: ".14em", color: "#8C8578" }}>{row.l}</div>
+                  <div className="mono" style={{ fontSize: 18, marginTop: 7 }}>{row.v}</div>
+                </div>
+              ))}
+          </div>
+
+          {data.for_local_time && (
+            <div className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "#A8A192", marginTop: 22 }}>
+              FOR THE START HOUR · {data.for_local_time}
+            </div>
+          )}
+
+          {/* The plan is not re-solved from here. Drift decides whether a
+              move is large enough to be worth a new version, and says what it
+              costs; a card that silently re-solved would be Law 3 broken. */}
+          {tempShift !== null && Math.abs(tempShift) >= 3 && (
+            <p style={{ margin: "16px 0 0", fontSize: 13.5, lineHeight: 1.6, color: "#6B6455" }}>
+              This plan was solved against a different day. Re-solving picks up the current
+              forecast; your existing version stays readable either way.
+            </p>
+          )}
+        </>
+      )}
+    </Reveal>
   );
 }
 
