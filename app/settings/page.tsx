@@ -31,8 +31,11 @@ import { ApiError } from "@/lib/api/errors";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  ERASURE_CONFIRMATION,
   formatDate,
   useConstraints,
+  useDeleteAccount,
+  useErasureImpact,
   useInvoices,
   usePreferences,
   useSaveConstraint,
@@ -246,6 +249,164 @@ function ProfileTab({ indicator }: { indicator: ReturnType<typeof useSaveIndicat
           onChange={(level) => save.mutate({ level })}
         />
       </div>
+
+      <DangerZone />
+    </div>
+  );
+}
+
+/**
+ * Deleting the account.
+ *
+ * Three things this does that a plain "are you sure?" does not:
+ *
+ * 1. It reads `GET /auth/me/erasure-impact` first and shows the counts *in*
+ *    the confirmation. "This removes 4 plans and 2 races" is a decision
+ *    somebody can actually make.
+ * 2. It requires the exact words the server requires. The field is not
+ *    pre-filled and the button stays disabled until they match, because a
+ *    confirmation the client supplies for you is not a confirmation.
+ * 3. It says, before anything is typed, that a live subscription has to be
+ *    cancelled first — the server refuses that case, and finding out by
+ *    being refused after typing the words is a worse way to learn it.
+ */
+function DangerZone() {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [reason, setReason] = useState("");
+  const { signOut } = useAuth();
+  const impact = useErasureImpact(open);
+  const erase = useDeleteAccount();
+
+  const blocked = impact.data?.active_subscription === true;
+  const ready = typed === ERASURE_CONFIRMATION && !blocked && !erase.isPending;
+
+  function destroy() {
+    erase.mutate(
+      { confirmation: typed, reason: reason || undefined },
+      // The account is gone; the session that addressed it is meaningless.
+      // Signing out also drops the whole query cache.
+      { onSuccess: () => void signOut() },
+    );
+  }
+
+  if (!open) {
+    return (
+      <div style={{ marginTop: 40, paddingTop: 26, borderTop: "1px solid rgba(21,20,15,.1)" }}>
+        <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>
+          DELETE ACCOUNT
+        </div>
+        <p style={{ margin: "12px 0 0", maxWidth: 520, fontSize: 14, lineHeight: 1.6, color: "#6B6455" }}>
+          Erases your account and everything personal on it. Invoices survive as
+          legally-required records with your name removed from them. This cannot be undone.
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          style={{ height: 40, padding: "0 18px", marginTop: 16, borderRadius: 7, border: "1px solid rgba(192,57,43,.4)", background: "transparent", color: "#C0392B", fontSize: 14, fontWeight: 500, cursor: "pointer" }}
+        >
+          Delete my account
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 40, padding: "24px 26px", borderRadius: 10, border: "1px solid rgba(192,57,43,.3)", background: "rgba(192,57,43,.035)" }}>
+      <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#C0392B" }}>
+        DELETE ACCOUNT
+      </div>
+
+      {impact.isPending ? (
+        <div style={{ marginTop: 16 }}><Skeleton width="100%" height={64} /></div>
+      ) : impact.error ? (
+        <div style={{ marginTop: 16 }}>
+          <ApiErrorState error={impact.error} onRetry={() => void impact.refetch()} />
+        </div>
+      ) : (
+        <>
+          <p style={{ margin: "14px 0 0", maxWidth: 540, fontSize: 15, lineHeight: 1.6, color: "#302C24" }}>
+            This permanently removes{" "}
+            <strong style={{ fontWeight: 600 }}>{impact.data.plans} plan{impact.data.plans === 1 ? "" : "s"}</strong>,{" "}
+            <strong style={{ fontWeight: 600 }}>{impact.data.races} race{impact.data.races === 1 ? "" : "s"}</strong>
+            {impact.data.coach_links > 0 && (
+              <>
+                {" "}and{" "}
+                <strong style={{ fontWeight: 600 }}>
+                  {impact.data.coach_links} coach link{impact.data.coach_links === 1 ? "" : "s"}
+                </strong>
+              </>
+            )}
+            . {impact.data.invoices > 0 && (
+              <>
+                Your {impact.data.invoices} invoice{impact.data.invoices === 1 ? "" : "s"} stay as
+                required records, with your name removed.
+              </>
+            )}
+          </p>
+
+          {blocked && (
+            <p style={{ margin: "16px 0 0", maxWidth: 540, fontSize: 14, lineHeight: 1.6, color: "#C0392B" }}>
+              You have a live subscription. Cancel it on the Billing tab first — deleting the
+              account while it is running would leave you charged with no way to see the receipt.
+            </p>
+          )}
+
+          <label style={{ display: "block", marginTop: 20, maxWidth: 420 }}>
+            <span className="mono" style={{ display: "block", fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>
+              TYPE {ERASURE_CONFIRMATION} TO CONFIRM
+            </span>
+            <input
+              value={typed}
+              onChange={(event) => setTyped(event.target.value)}
+              disabled={blocked || erase.isPending}
+              autoComplete="off"
+              style={{ width: "100%", height: 40, padding: "0 12px", marginTop: 8, borderRadius: 7, border: "1px solid rgba(21,20,15,.16)", background: "#fff", fontSize: 14 }}
+            />
+          </label>
+
+          <label style={{ display: "block", marginTop: 14, maxWidth: 420 }}>
+            <span className="mono" style={{ display: "block", fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>
+              WHY, IF YOU WANT TO SAY (OPTIONAL)
+            </span>
+            <input
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              disabled={blocked || erase.isPending}
+              style={{ width: "100%", height: 40, padding: "0 12px", marginTop: 8, borderRadius: 7, border: "1px solid rgba(21,20,15,.16)", background: "#fff", fontSize: 14 }}
+            />
+          </label>
+
+          {erase.error && (
+            <div style={{ marginTop: 16 }}>
+              <ApiErrorState error={erase.error} />
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+            <button
+              type="button"
+              disabled={!ready}
+              onClick={destroy}
+              style={{ height: 40, padding: "0 18px", borderRadius: 7, border: "none", background: ready ? "#C0392B" : "rgba(192,57,43,.3)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: ready ? "pointer" : "default" }}
+            >
+              {erase.isPending ? "Deleting…" : "Delete permanently"}
+            </button>
+            <button
+              type="button"
+              disabled={erase.isPending}
+              onClick={() => {
+                setOpen(false);
+                setTyped("");
+                setReason("");
+              }}
+              style={{ height: 40, padding: "0 18px", borderRadius: 7, border: "1px solid rgba(21,20,15,.18)", background: "transparent", fontSize: 14, cursor: "pointer" }}
+            >
+              Keep my account
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

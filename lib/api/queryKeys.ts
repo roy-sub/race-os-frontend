@@ -12,6 +12,7 @@ export const queryKeys = {
     all: ["auth"] as const,
     me: () => [...queryKeys.auth.all, "me"] as const,
     providers: () => [...queryKeys.auth.all, "providers"] as const,
+    erasureImpact: () => [...queryKeys.auth.all, "erasure-impact"] as const,
   },
   courses: {
     all: ["courses"] as const,
@@ -64,6 +65,7 @@ export const queryKeys = {
     all: ["coach"] as const,
     board: () => [...queryKeys.coach.all, "board"] as const,
     athletes: () => [...queryKeys.coach.all, "athletes"] as const,
+    branding: () => [...queryKeys.coach.all, "branding"] as const,
   },
   admin: {
     all: ["admin"] as const,
@@ -71,6 +73,12 @@ export const queryKeys = {
     kpis: () => [...queryKeys.admin.all, "kpis"] as const,
     health: () => [...queryKeys.admin.all, "health"] as const,
     incidents: () => [...queryKeys.admin.all, "incidents"] as const,
+    revenue: (days: number) => [...queryKeys.admin.all, "revenue", days] as const,
+    users: (params: Record<string, string | number | null | undefined>) =>
+      [...queryKeys.admin.all, "users", params] as const,
+    user: (id: string) => [...queryKeys.admin.all, "user", id] as const,
+    curation: (status: string | null) =>
+      [...queryKeys.admin.all, "curation", status] as const,
   },
   help: {
     all: ["help"] as const,

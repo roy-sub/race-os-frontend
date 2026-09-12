@@ -30,6 +30,7 @@ export type NotificationType = components["schemas"]["NotificationType"];
 export type DriftSensitivity = components["schemas"]["DriftSensitivity"];
 export type Invoice = components["schemas"]["InvoiceOut"];
 export type UnitSystem = components["schemas"]["UnitSystem"];
+export type ErasureImpact = components["schemas"]["ErasureImpactOut"];
 
 // ---------------------------------------------------------------------------
 // Dashboard and plans
@@ -240,6 +241,52 @@ export function useInvoices(enabled = true) {
 // ---------------------------------------------------------------------------
 
 /** `2026-06-21` → `21 Jun 2026`. Absent stays absent; nothing is invented. */
+// ---------------------------------------------------------------------------
+// Deleting the account
+// ---------------------------------------------------------------------------
+
+/** The exact words the server demands. A boolean can be sent by mistake. */
+export const ERASURE_CONFIRMATION = "DELETE MY ACCOUNT";
+
+/**
+ * What deleting this account would destroy, counted before anything is.
+ *
+ * Read separately from the delete so the numbers can be shown *in* the
+ * confirmation rather than after it. "This removes 4 plans and 2 races" is a
+ * decision someone can make; "are you sure?" is not.
+ */
+export function useErasureImpact(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.auth.erasureImpact(),
+    enabled,
+    queryFn: () => unwrap(client.GET("/api/v1/auth/me/erasure-impact")),
+    // Never served from cache: the figures are the whole basis of the
+    // decision, and a stale count here understates what is about to go.
+    staleTime: 0,
+    gcTime: 0,
+  });
+}
+
+/**
+ * Erase this account.
+ *
+ * Irreversible, and the server refuses while a subscription is live — cancel
+ * first, so nobody deletes their way into a charge they cannot see a receipt
+ * for. The caller must send the exact confirmation string; this hook does not
+ * fill it in, because a client that supplies its own confirmation defeats the
+ * point of asking for one.
+ */
+export function useDeleteAccount() {
+  return useMutation({
+    mutationFn: ({ confirmation, reason }: { confirmation: string; reason?: string }) =>
+      unwrap(
+        client.DELETE("/api/v1/auth/me", {
+          body: { confirmation, reason: reason || null },
+        }),
+      ),
+  });
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);

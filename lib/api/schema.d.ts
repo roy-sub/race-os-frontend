@@ -1096,7 +1096,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The race card, as a printable A5 page */
+        /**
+         * The race card, as a printable A5 page
+         * @description **Unbranded by default, deliberately.**
+         *
+         *     A branded artefact is something a coach hands over on purpose. An athlete
+         *     downloading their own race card gets the house document unless somebody
+         *     chose otherwise — and the choice is checked against the coach's
+         *     entitlement rather than taken on trust from a query parameter.
+         */
         get: operations["export_race_card_api_v1_plans__plan_id__export_race_card_pdf_get"];
         put?: never;
         post?: never;
@@ -1835,6 +1843,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/coach/branding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My branding */
+        get: operations["get_branding_api_v1_coach_branding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set a display name, accent or footer line
+         * @description **One colour, not a theme.**
+         *
+         *     The accent replaces a single value and is refused if it would not survive
+         *     printing: the race card is read in a transition tent, often through a wet
+         *     sleeve and often after somebody photocopied it, and the person holding an
+         *     unreadable one cannot fix it. The layout, the typography and every
+         *     safeguard in the artefact are fixed.
+         */
+        patch: operations["update_branding_api_v1_coach_branding_patch"];
+        trace?: never;
+    };
+    "/api/v1/coach/branding/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The stored logo
+         * @description Served from its own endpoint rather than inlined on the settings read.
+         *
+         *     A base64 blob on every read would be most of the payload, for an image the
+         *     screen shows once.
+         */
+        get: operations["get_branding_logo_api_v1_coach_branding_logo_get"];
+        /**
+         * Upload a logo
+         * @description PNG, JPEG or WebP, and the bytes are checked against what they claim.
+         *
+         *     No SVG: it is a document format carrying script and external references,
+         *     and this file is rendered into a PDF on our own server.
+         */
+        put: operations["upload_branding_logo_api_v1_coach_branding_logo_put"];
+        post?: never;
+        /** Remove the logo */
+        delete: operations["delete_branding_logo_api_v1_coach_branding_logo_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/coach/invites": {
         parameters: {
             query?: never;
@@ -2418,6 +2484,133 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find an account
+         * @description `total` counts everything matching, not what fits on the page.
+         */
+        get: operations["list_users_api_v1_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One account, in administration terms
+         * @description Account facts and counts. No plans, no measurements, no next of kin.
+         */
+        get: operations["get_user_api_v1_admin_users__user_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/courses/submitted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Athlete-submitted courses awaiting a decision
+         * @description Defaults to the queue. Pass a status to audit past decisions.
+         */
+        get: operations["submitted_courses_api_v1_admin_courses_submitted_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/courses/{course_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * List a submitted course to everyone
+         * @description The submitter stays on the row. The directory still says it was added
+         *     by an athlete, because publishing reviews a course, it does not resurvey
+         *     one.
+         */
+        post: operations["publish_course_api_v1_admin_courses__course_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/courses/{course_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline a submitted course, with a reason
+         * @description Takes nothing away. The course stays usable by the athlete who added
+         *     it and their plans against it are untouched.
+         */
+        post: operations["reject_course_api_v1_admin_courses__course_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/revenue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Money in and money back, per currency
+         * @description Per currency, never summed across them.
+         *
+         *     This system stores no exchange rate, so a combined total would be a number
+         *     with no unit. A caller who needs one figure has to bring the rate that
+         *     makes it true.
+         */
+        get: operations["revenue_api_v1_admin_revenue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/support-access": {
         parameters: {
             query?: never;
@@ -2806,6 +2999,15 @@ export interface components {
             /** Withheld Reason */
             withheld_reason?: string | null;
         };
+        /** Body_upload_branding_logo_api_v1_coach_branding_logo_put */
+        Body_upload_branding_logo_api_v1_coach_branding_logo_put: {
+            /**
+             * File
+             * Format: binary
+             * @description A PNG, JPEG or WebP
+             */
+            file: string;
+        };
         /** Body_upload_file_api_v1_post_race_files_post */
         Body_upload_file_api_v1_post_race_files_post: {
             /**
@@ -2825,6 +3027,47 @@ export interface components {
              * @description A GPX file for this leg
              */
             file: string;
+        };
+        /**
+         * BrandingOut
+         * @description A coach's mark, as configured. Never the logo bytes.
+         */
+        BrandingOut: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Accent Hex */
+            accent_hex?: string | null;
+            /** Footer Note */
+            footer_note?: string | null;
+            /**
+             * Has Logo
+             * @default false
+             */
+            has_logo: boolean;
+            /**
+             * Effective Accent Hex
+             * @default
+             */
+            effective_accent_hex: string;
+        };
+        /**
+         * BrandingUpdate
+         * @description Absent means unchanged. Explicitly clearing the accent is its own flag,
+         *     because `null` and "leave it alone" are different intentions and a single
+         *     nullable field cannot carry both.
+         */
+        BrandingUpdate: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Accent Hex */
+            accent_hex?: string | null;
+            /** Footer Note */
+            footer_note?: string | null;
+            /**
+             * Clear Accent
+             * @default false
+             */
+            clear_accent: boolean;
         };
         /**
          * BundleDetail
@@ -3354,6 +3597,32 @@ export interface components {
          * @enum {string}
          */
         CrowdStatus: "pending" | "promoted" | "held" | "rejected";
+        /** CurationRequest */
+        CurationRequest: {
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * CurationStatus
+         * @description Whether an athlete-submitted course has been reviewed into the catalogue.
+         *
+         *     A submitted course is usable by the athlete who submitted it from the
+         *     moment it builds — they added it to race it, and making them wait on a
+         *     queue to plan their own race would be a worse product for no safety gain,
+         *     because they are the only one who can see it.
+         *
+         *     What review decides is the *other* direction: whether everyone else sees
+         *     it too. The catalogue is the set of courses this system says are surveyed,
+         *     and that claim is the product. One unchecked GPX trace promoted into it
+         *     quietly makes every other row less trustworthy, because a reader cannot
+         *     tell which kind of row they are looking at.
+         *
+         *     ``REJECTED`` does not delete anything or take the course away from its
+         *     submitter. It records that it was looked at and not published, with a
+         *     reason, so the next reviewer does not start again from nothing.
+         * @enum {string}
+         */
+        CurationStatus: "unreviewed" | "published" | "rejected";
         /**
          * Currency
          * @enum {string}
@@ -3889,7 +4158,7 @@ export interface components {
          *     shows up in the preferences screen as a switch that governs nothing.
          * @enum {string}
          */
-        NotificationType: "drift" | "week" | "cutoff" | "bundle" | "analysis" | "digest" | "plan_ready" | "coach_shared" | "athlete_accepted" | "payment_succeeded" | "payment_failed" | "subscription_renewing" | "support_access";
+        NotificationType: "drift" | "week" | "cutoff" | "bundle" | "analysis" | "digest" | "plan_ready" | "coach_shared" | "athlete_accepted" | "payment_succeeded" | "payment_failed" | "subscription_renewing" | "support_access" | "course_reviewed";
         /** OverrideRequest */
         OverrideRequest: {
             /** Constraint Key */
@@ -4558,6 +4827,11 @@ export interface components {
             amount_cents?: number | null;
             /** Note */
             note?: string | null;
+        };
+        /** RejectionRequest */
+        RejectionRequest: {
+            /** Note */
+            note: string;
         };
         /** ResetPasswordRequest */
         ResetPasswordRequest: {
@@ -7099,7 +7373,10 @@ export interface operations {
     };
     export_race_card_api_v1_plans__plan_id__export_race_card_pdf_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Render with the coach's branding, where this plan was built by one who has set any. Requires the coach tier. */
+                branded?: boolean;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -7130,7 +7407,10 @@ export interface operations {
     };
     export_bag_manifests_api_v1_plans__plan_id__export_bags_pdf_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Render with the coach's branding, as above. */
+                branded?: boolean;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -8383,6 +8663,167 @@ export interface operations {
             };
         };
     };
+    get_branding_api_v1_coach_branding_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_branding_api_v1_coach_branding_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_branding_logo_api_v1_coach_branding_logo_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_branding_logo_api_v1_coach_branding_logo_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_branding_logo_api_v1_coach_branding_logo_put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_branding_logo_api_v1_coach_branding_logo_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_invite_api_v1_coach_invites_post: {
         parameters: {
             query?: never;
@@ -9478,6 +9919,219 @@ export interface operations {
                 "application/json": components["schemas"]["RoleRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_api_v1_admin_users_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                tier?: components["schemas"]["UserTier"] | null;
+                role?: components["schemas"]["AdminRole"] | null;
+                state?: components["schemas"]["AccountState"] | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_api_v1_admin_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submitted_courses_api_v1_admin_courses_submitted_get: {
+        parameters: {
+            query?: {
+                curation_status?: components["schemas"]["CurationStatus"] | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_course_api_v1_admin_courses__course_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CurationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_course_api_v1_admin_courses__course_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revenue_api_v1_admin_revenue_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

@@ -14,7 +14,7 @@
  * "we measured, and it was nothing".
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Mark } from "@/components/Mark";
 import { Skeleton } from "@/components/Skeleton";
@@ -22,7 +22,16 @@ import { ApiErrorState } from "@/components/ApiErrorState";
 import { routes } from "@/lib/routes";
 import { GuardedPage } from "@/lib/auth/GuardedPage";
 import { ApiError } from "@/lib/api/errors";
-import { useKpis, useOpsOverview, type KpiRow } from "@/lib/api/screens";
+import {
+  useCurationQueue,
+  useKpis,
+  useOpsOverview,
+  usePublishCourse,
+  useRejectCourse,
+  useRevenue,
+  type CurationRow,
+  type KpiRow,
+} from "@/lib/api/screens";
 
 const CARD: React.CSSProperties = {
   background: "#FBF8F2",
@@ -85,9 +94,105 @@ function Spark({ rows, pick }: { rows: KpiRow[]; pick: (row: KpiRow) => number |
   );
 }
 
+
+/**
+ * Money, in its own currency.
+ *
+ * There is deliberately no "total" formatter anywhere on this page. The server
+ * stores no exchange rate, so adding GBP to EUR would produce a number with no
+ * unit — and a plausible-looking one, which is the dangerous kind.
+ */
+function money(cents: number, currency: string): string {
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(cents / 100);
+}
+
+/** A rate that could not be computed is an em dash, never 0%. */
+function pct(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return `${value.toFixed(1)}%`;
+}
+
+/**
+ * One submitted course, and the two things a reviewer can do with it.
+ *
+ * Rejecting requires a reason because the submitter reads it — the button
+ * stays disabled until there is one, rather than sending an empty string and
+ * letting the server refuse.
+ */
+function CurationCard({ row }: { row: CurationRow }) {
+  const [note, setNote] = useState("");
+  const publish = usePublishCourse();
+  const reject = useRejectCourse();
+  const busy = publish.isPending || reject.isPending;
+  const incomplete = row.leg_count < 3;
+
+  return (
+    <div style={{ padding: "18px 20px", borderRadius: 9, background: "rgba(255,255,255,.6)", border: "1px solid rgba(21,20,15,.08)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 16, fontWeight: 500, letterSpacing: "-.02em" }}>{row.name}</span>
+        <span className="mono" style={{ fontSize: 9, letterSpacing: ".12em", color: "#A8A192" }}>
+          {row.distance_type.toUpperCase()}
+          {row.place ? ` · ${row.place.toUpperCase()}` : ""}
+        </span>
+        {incomplete && (
+          <span className="mono" style={{ fontSize: 9, letterSpacing: ".12em", color: "#C0392B" }}>
+            {row.leg_count}/3 LEGS
+          </span>
+        )}
+      </div>
+      <div className="mono" style={{ fontSize: 9, letterSpacing: ".1em", color: "#8C8578", marginTop: 8 }}>
+        {row.submitted_by_email} · {new Date(row.submitted_at).toLocaleDateString("en-GB")}
+      </div>
+
+      <label style={{ display: "block", marginTop: 14 }}>
+        <span className="sr-only">Reason, which the submitter will read</span>
+        <input
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder="Why — the submitter reads this"
+          disabled={busy}
+          style={{ width: "100%", height: 38, padding: "0 12px", borderRadius: 7, border: "1px solid rgba(21,20,15,.16)", background: "#fff", fontSize: 14 }}
+        />
+      </label>
+
+      <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => publish.mutate({ courseId: row.course_id, note: note || undefined })}
+          style={{ height: 38, padding: "0 18px", borderRadius: 7, border: "none", background: "#E4622F", color: "#fff", fontSize: 14, fontWeight: 600, cursor: busy ? "default" : "pointer" }}
+        >
+          {publish.isPending ? "Publishing…" : "Publish to the catalogue"}
+        </button>
+        <button
+          type="button"
+          disabled={busy || !note.trim()}
+          onClick={() => reject.mutate({ courseId: row.course_id, note })}
+          title={note.trim() ? undefined : "A rejection needs a reason"}
+          style={{ height: 38, padding: "0 18px", borderRadius: 7, border: "1px solid rgba(21,20,15,.18)", background: "transparent", fontSize: 14, fontWeight: 500, color: note.trim() ? "#302C24" : "#A8A192", cursor: busy || !note.trim() ? "default" : "pointer" }}
+        >
+          {reject.isPending ? "Declining…" : "Decline"}
+        </button>
+      </div>
+
+      {(publish.error || reject.error) && (
+        <div style={{ marginTop: 12 }}>
+          <ApiErrorState error={publish.error ?? reject.error} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminPage() {
   const overview = useOpsOverview();
   const kpis = useKpis(30);
+  const revenue = useRevenue(30);
+  const curation = useCurationQueue("unreviewed");
 
   const forbidden =
     overview.error instanceof ApiError &&
@@ -103,7 +208,14 @@ function AdminPage() {
             <Mark width={27} height={18} />
             <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-.035em" }}>RaceOS</span>
           </Link>
-          <span className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#8C8578" }}>OPS</span>
+          <nav style={{ display: "flex", alignItems: "center", gap: 22 }}>
+            <span className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#302C24" }}>OPS</span>
+            {/* Admin-only on the far side. Shown to every ops user rather than
+                hidden by role, because a link that refuses with a reason beats
+                a page that silently has one fewer thing on it — and the page
+                itself says which role it needs. */}
+            <Link href={routes.adminAccounts} className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#8C8578" }}>ACCOUNTS</Link>
+          </nav>
         </div>
       </header>
 
@@ -225,6 +337,88 @@ function AdminPage() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            <div style={{ ...CARD, padding: "26px 30px", marginTop: 14 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#8C8578" }}>REVENUE · 30D</div>
+                <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".1em", color: "#B8B1A2" }}>
+                  PER CURRENCY · NEVER SUMMED
+                </div>
+              </div>
+
+              {revenue.error ? (
+                <div style={{ marginTop: 18 }}>
+                  <ApiErrorState error={revenue.error} onRetry={() => void revenue.refetch()} />
+                </div>
+              ) : revenue.isPending ? (
+                <div style={{ marginTop: 18 }}><Skeleton width="100%" height={72} /></div>
+              ) : revenue.data.currencies.length === 0 ? (
+                <p style={{ margin: "16px 0 0", fontSize: 14.5, lineHeight: 1.55, color: "#6B6455" }}>
+                  Nothing was invoiced in the last 30 days. A currency with no activity is absent
+                  rather than shown as zero — “nobody paid in euros” and “we do not sell in euros”
+                  are different facts.
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 34, marginTop: 18 }}>
+                  {revenue.data.currencies.map((row) => (
+                    <div key={row.currency}>
+                      <div className="mono" style={{ fontSize: 26, letterSpacing: "-.04em" }}>
+                        {money(row.net_cents, row.currency)}
+                      </div>
+                      <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "#A8A192", marginTop: 7 }}>
+                        {row.currency} NET · {row.invoice_count} INVOICE{row.invoice_count === 1 ? "" : "S"}
+                      </div>
+                      {row.refunded_cents > 0 && (
+                        <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#C0392B", marginTop: 5 }}>
+                          −{money(row.refunded_cents, row.currency)} REFUNDED
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  <div style={{ borderLeft: "1px solid rgba(21,20,15,.1)", paddingLeft: 34 }}>
+                    <div className="mono" style={{ fontSize: 26, letterSpacing: "-.04em" }}>
+                      {pct(revenue.data.churn.churn_pct)}
+                    </div>
+                    <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".15em", color: "#A8A192", marginTop: 7 }}>
+                      CHURN · {revenue.data.churn.subscriptions_lost}/
+                      {revenue.data.churn.subscriptions_at_risk}
+                    </div>
+                    <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#B8B1A2", marginTop: 5 }}>
+                      {revenue.data.churn.active_now} ACTIVE NOW
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ ...CARD, padding: "26px 30px", marginTop: 14 }}>
+              <div className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#8C8578" }}>
+                COURSES AWAITING REVIEW
+              </div>
+              <p style={{ margin: "12px 0 0", maxWidth: 620, fontSize: 14, lineHeight: 1.55, color: "#6B6455" }}>
+                A course an athlete added is private to them until it is published here. Declining
+                takes nothing away — it stays theirs to plan on, with the reason attached.
+              </p>
+
+              {curation.error ? (
+                <div style={{ marginTop: 18 }}>
+                  <ApiErrorState error={curation.error} onRetry={() => void curation.refetch()} />
+                </div>
+              ) : curation.isPending ? (
+                <div style={{ marginTop: 18 }}><Skeleton width="100%" height={96} /></div>
+              ) : curation.data.results.length === 0 ? (
+                <p style={{ margin: "16px 0 0", fontSize: 14.5, lineHeight: 1.55, color: "#6B6455" }}>
+                  Nothing is waiting.
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 18 }}>
+                  {curation.data.results.map((row) => (
+                    <CurationCard key={row.course_id} row={row} />
+                  ))}
+                </div>
+              )}
             </div>
 
             <div style={{ ...CARD, padding: "26px 30px", marginTop: 14 }}>
