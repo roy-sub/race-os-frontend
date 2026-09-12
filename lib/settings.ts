@@ -82,6 +82,8 @@ export const SRC_STYLE: Record<ConstraintSource, { bg: string; fg: string; label
   tested: { bg: "rgba(124,192,143,.12)", fg: "#3E7B55", label: "TESTED" },
   manual: { bg: "rgba(21,20,15,.07)", fg: "#5C574B", label: "MANUAL" },
   estimated: { bg: "rgba(224,163,60,.18)", fg: "#A0701A", label: "ESTIMATED" },
+  // Blue: neither a measurement nor a guess, but somebody else's model.
+  imported: { bg: "rgba(79,124,147,.15)", fg: "#3D6478", label: "IMPORTED" },
 };
 
 export const CONF_FG: Record<ConstraintSource, string> = {
@@ -89,6 +91,7 @@ export const CONF_FG: Record<ConstraintSource, string> = {
   tested: "#5C9E72",
   manual: "#8C8578",
   estimated: "#E0A33C",
+  imported: "#4F7C93",
 };
 
 /** A stale value is amber whatever its source: age is its own warning. */
@@ -126,7 +129,50 @@ export const NOTIF_COPY: Partial<Record<NotificationType, { name: string; desc: 
     name: "Monthly digest",
     desc: "New courses and product changes. Off by default.",
   },
+  plan_ready: {
+    name: "A coach built you a plan",
+    desc: "It is not live until you approve it, so this is how you find out it exists.",
+  },
+  coach_shared: {
+    name: "A coach shared something",
+    desc: "An invitation to link accounts, or a plan they built for you.",
+  },
+  athlete_accepted: {
+    name: "An athlete accepted your invite",
+    desc: "Coaches only. They control what you can see until they grant it.",
+  },
+  payment_succeeded: {
+    name: "Payment receipts",
+    desc: "In-app only by default — the invoice is already on this screen.",
+  },
+  payment_failed: {
+    name: "Payment problems",
+    desc: "A declined card pauses new solves. Always shown here, whatever you choose.",
+  },
+  subscription_renewing: {
+    name: "Before a renewal",
+    desc: "A week's notice, so cancelling is still a choice rather than a refund request.",
+  },
+  support_access: {
+    name: "Support access requests",
+    desc: "When somebody asks to look at your account. Always shown here.",
+  },
 };
+
+/**
+ * Types whose in-app delivery cannot be switched off, mirroring
+ * `CRITICAL_NOTIFICATION_TYPES` on the server.
+ *
+ * Duplicated rather than fetched because it is a *label*: the server enforces
+ * the floor regardless of what this says, and a switch that looks off while
+ * the message still arrives is worse than one that says why it is fixed.
+ */
+export const ALWAYS_IN_APP: NotificationType[] = [
+  "drift",
+  "cutoff",
+  "payment_failed",
+  "support_access",
+];
 
 export function notificationName(key: NotificationType): string {
   const copy = NOTIF_COPY[key];

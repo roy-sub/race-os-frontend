@@ -567,6 +567,64 @@
           }
         }
       },
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Delete this account (GDPR erasure)",
+        "description": "**Irreversible, and only ever by the person who holds the account.**\n\nNot a hard delete. Invoices are financial records with statutory\nretention, plans a coach built are that coach's work too, and the audit\nlog has to stay referentially intact \u2014 so the row survives as a tombstone\nwith an id, a state and a timestamp, and every field that identifies a\nperson is scrubbed. Enough for an invoice to point somewhere; not enough\nto say who it was.\n\nEvery session is revoked and every token issued before now stops\nverifying, so an access token still sitting in another tab dies with the\naccount rather than outliving it. The response is the last thing this\naccount will ever receive.",
+        "operationId": "erase_me_api_v1_auth_me_delete",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErasureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureImpactOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "tags": [
           "auth"
@@ -609,6 +667,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me/erasure-impact": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "What deleting this account would destroy",
+        "description": "Read before the delete, so the confirmation states facts.\n\n\"4 plans and 2 invoices\" is a different decision from \"0 and 0\", and a\ngeneric warning makes both look the same.",
+        "operationId": "erasure_impact_api_v1_auth_me_erasure_impact_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureImpactOut"
                 }
               }
             }
@@ -818,6 +926,65 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BundleDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/courses/{course_ref}/conditions-history": {
+      "get": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "What race day has actually been like",
+        "description": "Public, like the rest of recon. **Observed, never modelled.**\n\nEvery figure is reanalysis from the weather archive for this course's own\ncoordinates, at the race's own start hour, on the day the race was held.\nWhere a value is unavailable it is absent: a lake course has no\nsea-surface temperature, so it has no water temperature and therefore no\nwetsuit likelihood, rather than one inferred from the air.\n\nThere is no finish-time distribution. It needs actual results, which this\nsystem does not have and cannot obtain, and the prototype's was drawn.",
+        "operationId": "get_conditions_history_api_v1_courses__course_ref__conditions_history_get",
+        "parameters": [
+          {
+            "name": "course_ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Ref"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConditionsHistoryOut"
                 }
               }
             }
@@ -2999,6 +3166,256 @@
         }
       }
     },
+    "/api/v1/races/{race_id}/race-week": {
+      "get": {
+        "tags": [
+          "races"
+        ],
+        "summary": "The race-week checklist",
+        "description": "Dated, checkable tasks. **Generated on read, idempotently.**\n\nThe ICS export has always derived the right dates from the event date \u2014 a\nTuesday race gets a Saturday check-in \u2014 but a calendar event cannot be\nticked off and nothing was stored, so \"have I handed in the special-needs\nbag?\" had no answer. Both now come from one derivation, so the calendar\nand the checklist cannot disagree about the same week.\n\nGenerating here rather than in a job means a race entered five minutes ago\nhas a checklist, instead of waiting for a cron that may not run before race\nweek.",
+        "operationId": "get_race_week_api_v1_races__race_id__race_week_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaceWeekOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/races/{race_id}/race-week/tasks": {
+      "post": {
+        "tags": [
+          "races"
+        ],
+        "summary": "Add your own race-week task",
+        "description": "Sits beside the derived ones, in date order. To the athlete it is one\nlist, so it is one list.",
+        "operationId": "add_race_week_task_api_v1_races__race_id__race_week_tasks_post",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RaceWeekTaskCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaceWeekTaskOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/races/race-week/tasks/{task_id}": {
+      "patch": {
+        "tags": [
+          "races"
+        ],
+        "summary": "Tick a task off, or un-tick it",
+        "operationId": "set_race_week_task_api_v1_races_race_week_tasks__task_id__patch",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RaceWeekTaskPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaceWeekTaskOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "races"
+        ],
+        "summary": "Remove a task you added",
+        "description": "Yours only. A derived task is part of the race rather than a note, and\nremoving \"bike check-in\" because it is inconvenient is not something the\nchecklist should help with \u2014 ticking it off is.",
+        "operationId": "delete_race_week_task_api_v1_races_race_week_tasks__task_id__delete",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/plans/{plan_id}/export": {
       "get": {
         "tags": [
@@ -4072,6 +4489,75 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MyPlansOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/season-history": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "A season at a glance, and constraint drift across it",
+        "description": "The Season Pass view. **Gated on the tier that is sold with it.**\n\nTwo things, and the second is the one that did not exist anywhere:\nconstraint history was per key (`GET /constraints/{key}/history`), which\nanswers \"how has my FTP moved?\" and cannot answer \"what changed about me\nlast year?\" \u2014 the question the tier is sold on. Assembling that from eight\nseparate requests is something a client should not have to do.\n\nSeasons are grouped from October rather than January, so a race in the new\nyear sits with the autumn that prepared it.",
+        "operationId": "get_season_history_api_v1_season_history_get",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only constraint changes from this date onward",
+              "title": "Since"
+            },
+            "description": "Only constraint changes from this date onward"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonHistoryOut"
                 }
               }
             }
@@ -7691,6 +8177,30 @@
         "title": "AdminRole",
         "description": "RBAC by role, never a boolean.\n\nSupport cannot see bundle publish controls or the refunds workspace, and\nthat is expressed by not holding the role rather than by a UI condition."
       },
+      "AdvisoryOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "tag": {
+            "type": "string",
+            "title": "Tag"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "tag",
+          "text"
+        ],
+        "title": "AdvisoryOut",
+        "description": "Where this plan sits outside the evidence behind its own model.\n\nDistinct from ``assumed_fields``, which is about inputs the athlete did not\nsupply. Every input can be present and the answer still rest on ground the\ndata does not cover \u2014 a heat decrement applied over a leg far longer than\nthe hour it was measured over, a curve held flat above its top knot.\n\nSays which numbers are soft, and never by how much: there is no correction\nterm to quote, and quoting one would be inventing it."
+      },
       "AffectedPlanOut": {
         "properties": {
           "plan_id": {
@@ -9012,6 +9522,238 @@
         ],
         "title": "CompareState"
       },
+      "ConditionsHistoryOut": {
+        "properties": {
+          "course_slug": {
+            "type": "string",
+            "title": "Course Slug"
+          },
+          "course_name": {
+            "type": "string",
+            "title": "Course Name"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ConditionsSummaryOut"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/ConditionsObservationOut"
+            },
+            "type": "array",
+            "title": "Observations"
+          },
+          "finish_times_available": {
+            "type": "boolean",
+            "title": "Finish Times Available",
+            "default": false
+          },
+          "empty_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Empty Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_slug",
+          "course_name",
+          "summary"
+        ],
+        "title": "ConditionsHistoryOut",
+        "description": "What race day has actually been like here.\n\n**There is no finish-time distribution.** It needs real results, which this\nsystem does not have and cannot obtain, so the field is absent rather than\ndrawn \u2014 `finish_times_available` says so in as many words, so a client does\nnot have to infer it from a missing key."
+      },
+      "ConditionsObservationOut": {
+        "properties": {
+          "observed_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Observed On"
+          },
+          "observed_hour": {
+            "type": "integer",
+            "title": "Observed Hour"
+          },
+          "air_temp_c": {
+            "type": "number",
+            "title": "Air Temp C"
+          },
+          "humidity_pct": {
+            "type": "number",
+            "title": "Humidity Pct"
+          },
+          "wind_speed_ms": {
+            "type": "number",
+            "title": "Wind Speed Ms"
+          },
+          "wind_dir_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wind Dir Deg"
+          },
+          "precipitation_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precipitation Mm"
+          },
+          "cloud_cover_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cloud Cover Pct"
+          },
+          "water_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Water Temp C"
+          }
+        },
+        "type": "object",
+        "required": [
+          "observed_on",
+          "observed_hour",
+          "air_temp_c",
+          "humidity_pct",
+          "wind_speed_ms"
+        ],
+        "title": "ConditionsObservationOut",
+        "description": "One past edition's race-morning weather, as the archive recorded it."
+      },
+      "ConditionsSummaryOut": {
+        "properties": {
+          "observations": {
+            "type": "integer",
+            "title": "Observations"
+          },
+          "median_air_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Air Temp C"
+          },
+          "median_humidity_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Humidity Pct"
+          },
+          "median_wind_speed_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Wind Speed Ms"
+          },
+          "warmest_air_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warmest Air Temp C"
+          },
+          "coolest_air_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coolest Air Temp C"
+          },
+          "water_observations": {
+            "type": "integer",
+            "title": "Water Observations",
+            "default": 0
+          },
+          "median_water_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Water Temp C"
+          },
+          "wetsuit_legal_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wetsuit Legal Fraction"
+          },
+          "wet_start_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wet Start Fraction"
+          }
+        },
+        "type": "object",
+        "required": [
+          "observations"
+        ],
+        "title": "ConditionsSummaryOut",
+        "description": "Medians, and the count they rest on.\n\nThe count travels with every figure deliberately: a median of two years is\na different claim from a median of ten, and a panel showing the number\nwithout it makes them look the same."
+      },
       "ConstraintHistoryOut": {
         "properties": {
           "id": {
@@ -9218,6 +9960,51 @@
         ],
         "title": "ConstraintOut"
       },
+      "ConstraintPointOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "change_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "value",
+          "unit",
+          "source",
+          "at"
+        ],
+        "title": "ConstraintPointOut"
+      },
       "ConstraintRefOut": {
         "properties": {
           "key": {
@@ -9306,10 +10093,47 @@
           "measured",
           "tested",
           "manual",
-          "estimated"
+          "estimated",
+          "imported"
         ],
         "title": "ConstraintSource",
         "description": "Provenance. Law 2: it travels with every value, forever.\n\nNo branch in the solver reads this. An ``ESTIMATED`` constraint is used\nwith exactly the numeric weight of a ``MEASURED`` one \u2014 there is no\ndown-weighting anywhere (``SOLVER_MODEL.md`` \u00a70.6), and a CI test asserts\nit by permuting every source in a golden input and requiring\nbyte-identical numeric output."
+      },
+      "ConstraintTrackOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ConstraintPointOut"
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "unit"
+        ],
+        "title": "ConstraintTrackOut"
       },
       "ConstraintWrite": {
         "properties": {
@@ -9932,6 +10756,68 @@
           "allowed"
         ],
         "title": "EntitlementOut"
+      },
+      "ErasureImpactOut": {
+        "properties": {
+          "plans": {
+            "type": "integer",
+            "title": "Plans"
+          },
+          "races": {
+            "type": "integer",
+            "title": "Races"
+          },
+          "invoices": {
+            "type": "integer",
+            "title": "Invoices"
+          },
+          "active_subscription": {
+            "type": "boolean",
+            "title": "Active Subscription"
+          },
+          "coach_links": {
+            "type": "integer",
+            "title": "Coach Links"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plans",
+          "races",
+          "invoices",
+          "active_subscription",
+          "coach_links"
+        ],
+        "title": "ErasureImpactOut",
+        "description": "What deleting this account would destroy, in this account's own numbers.\n\nReturned before the deletion so the confirmation screen states facts rather\nthan a generic warning \u2014 \"4 plans and 2 invoices\" is a different decision\nfrom \"0 and 0\"."
+      },
+      "ErasureRequest": {
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Confirmation",
+            "description": "Must be exactly 'DELETE MY ACCOUNT'"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation"
+        ],
+        "title": "ErasureRequest",
+        "description": "A typed confirmation, not a boolean.\n\nA boolean can be sent by a mis-wired client. This cannot be undone, so the\ncaller has to send back the exact words."
       },
       "ErrorCode": {
         "type": "string",
@@ -10853,9 +11739,17 @@
           "cutoff",
           "bundle",
           "analysis",
-          "digest"
+          "digest",
+          "plan_ready",
+          "coach_shared",
+          "athlete_accepted",
+          "payment_succeeded",
+          "payment_failed",
+          "subscription_renewing",
+          "support_access"
         ],
-        "title": "NotificationType"
+        "title": "NotificationType",
+        "description": "Every kind of thing the system tells an athlete about.\n\nEach one corresponds to an event the code actually produces. There is no\nentry here for something a job might emit one day: an unreachable type\nshows up in the preferences screen as a switch that governs nothing."
       },
       "OverrideRequest": {
         "properties": {
@@ -11278,6 +12172,13 @@
             },
             "type": "array",
             "title": "Warnings"
+          },
+          "advisories": {
+            "items": {
+              "$ref": "#/components/schemas/AdvisoryOut"
+            },
+            "type": "array",
+            "title": "Advisories"
           }
         },
         "type": "object",
@@ -12125,6 +13026,16 @@
             "type": "string",
             "title": "Plan Status"
           },
+          "display_status": {
+            "type": "string",
+            "title": "Display Status",
+            "default": "none"
+          },
+          "purchased": {
+            "type": "boolean",
+            "title": "Purchased",
+            "default": false
+          },
           "feasibility": {
             "type": "string",
             "title": "Feasibility"
@@ -12636,6 +13547,159 @@
         "type": "object",
         "title": "RaceUpdate"
       },
+      "RaceWeekOut": {
+        "properties": {
+          "race_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Race Id"
+          },
+          "event_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Event Date"
+          },
+          "visible": {
+            "type": "boolean",
+            "title": "Visible"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/RaceWeekTaskOut"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "remaining": {
+            "type": "integer",
+            "title": "Remaining",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "race_id",
+          "event_date",
+          "visible"
+        ],
+        "title": "RaceWeekOut",
+        "description": "The checklist, and whether it is worth showing yet."
+      },
+      "RaceWeekTaskCreate": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Due Date"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "due_date"
+        ],
+        "title": "RaceWeekTaskCreate"
+      },
+      "RaceWeekTaskOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Due Date"
+          },
+          "generated": {
+            "type": "boolean",
+            "title": "Generated"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "days_away": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Away"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "title",
+          "due_date",
+          "generated"
+        ],
+        "title": "RaceWeekTaskOut"
+      },
+      "RaceWeekTaskPatch": {
+        "properties": {
+          "completed": {
+            "type": "boolean",
+            "title": "Completed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "completed"
+        ],
+        "title": "RaceWeekTaskPatch"
+      },
       "RefundOut": {
         "properties": {
           "id": {
@@ -12844,6 +13908,201 @@
         ],
         "title": "SearchHitOut",
         "description": "One result.\n\n``ref`` is what the client needs to build a link \u2014 a course slug, a race or\nplan id, a help slug \u2014 rather than a URL. The frontend owns its route\ntable; a server emitting ``/plan?plan=`` would be a second copy of it, and\nsilently wrong the day a path changes."
+      },
+      "SeasonHistoryOut": {
+        "properties": {
+          "seasons": {
+            "items": {
+              "$ref": "#/components/schemas/SeasonOut"
+            },
+            "type": "array",
+            "title": "Seasons"
+          },
+          "constraints": {
+            "items": {
+              "$ref": "#/components/schemas/ConstraintTrackOut"
+            },
+            "type": "array",
+            "title": "Constraints"
+          }
+        },
+        "type": "object",
+        "title": "SeasonHistoryOut",
+        "description": "A season at a glance, and how the athlete moved across it."
+      },
+      "SeasonOut": {
+        "properties": {
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "planned_count": {
+            "type": "integer",
+            "title": "Planned Count"
+          },
+          "raced_count": {
+            "type": "integer",
+            "title": "Raced Count"
+          },
+          "races": {
+            "items": {
+              "$ref": "#/components/schemas/SeasonRaceOut"
+            },
+            "type": "array",
+            "title": "Races"
+          }
+        },
+        "type": "object",
+        "required": [
+          "season",
+          "label",
+          "planned_count",
+          "raced_count"
+        ],
+        "title": "SeasonOut"
+      },
+      "SeasonRaceOut": {
+        "properties": {
+          "race_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Race Id"
+          },
+          "course_name": {
+            "type": "string",
+            "title": "Course Name"
+          },
+          "course_place": {
+            "type": "string",
+            "title": "Course Place"
+          },
+          "course_slug": {
+            "type": "string",
+            "title": "Course Slug"
+          },
+          "distance_type": {
+            "type": "string",
+            "title": "Distance Type"
+          },
+          "event_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Event Date"
+          },
+          "race_status": {
+            "type": "string",
+            "title": "Race Status"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "plan_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Version"
+          },
+          "goal_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal Minutes"
+          },
+          "projected_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Minutes"
+          },
+          "actual_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Minutes"
+          },
+          "has_analysis": {
+            "type": "boolean",
+            "title": "Has Analysis",
+            "default": false
+          },
+          "goal_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal Label"
+          },
+          "projected_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Label"
+          },
+          "actual_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "race_id",
+          "course_name",
+          "course_place",
+          "course_slug",
+          "distance_type",
+          "event_date",
+          "race_status"
+        ],
+        "title": "SeasonRaceOut"
       },
       "SegmentOut": {
         "properties": {

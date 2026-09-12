@@ -68,18 +68,37 @@ export function feasStyle(value: string | null | undefined) {
   return (value && FEAS_STYLE[value]) || FEAS_FALLBACK;
 }
 
-/** Plan status as the athlete reads it, never as the enum spells it. */
+/**
+ * Plan status as the athlete reads it, never as the enum spells it.
+ *
+ * Keyed by `display_status`, which the server derives — so a paid-for race
+ * that has not been solved yet says so instead of reading as a bare draft,
+ * and a plan with drift waiting says it needs review instead of "solved".
+ * Those are not lifecycle states and are deliberately not in the enum: a plan
+ * is routinely both active *and* needing review, and exactly one version per
+ * race may be `active`.
+ *
+ * The `plan_status` keys are kept as fallbacks so a client running against an
+ * older server, which sends no `display_status`, still renders a label rather
+ * than a raw enum value.
+ */
 export const PLAN_STATUS_LABEL: Record<string, string> = {
   active: "PLAN SOLVED",
   draft: "DRAFT · NOT SOLVED",
   past: "RACED",
   pending_athlete_approval: "AWAITING YOUR APPROVAL",
   none: "NO PLAN YET",
+  raced: "RACED",
+  needs_review: "NEEDS REVIEW",
+  purchased_not_solved: "PAID FOR · NOT SOLVED",
+  purchased_not_started: "PAID FOR · NOT STARTED",
 };
 
 export function planStatusLabel(card: RaceCard): string {
-  const base = PLAN_STATUS_LABEL[card.plan_status] ?? card.plan_status.toUpperCase();
-  if (card.plan_status === "active" && card.plan_version != null) {
+  const key = card.display_status || card.plan_status;
+  const base = PLAN_STATUS_LABEL[key] ?? key.toUpperCase().replace(/_/g, " ");
+  // The version only where it means something: on the plan that is live.
+  if (key === "active" && card.plan_version != null) {
     return `${base} · V${card.plan_version}`;
   }
   return base;

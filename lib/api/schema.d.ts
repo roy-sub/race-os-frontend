@@ -229,7 +229,23 @@ export interface paths {
         get: operations["me_api_v1_auth_me_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete this account (GDPR erasure)
+         * @description **Irreversible, and only ever by the person who holds the account.**
+         *
+         *     Not a hard delete. Invoices are financial records with statutory
+         *     retention, plans a coach built are that coach's work too, and the audit
+         *     log has to stay referentially intact — so the row survives as a tombstone
+         *     with an id, a state and a timestamp, and every field that identifies a
+         *     person is scrubbed. Enough for an invoice to point somewhere; not enough
+         *     to say who it was.
+         *
+         *     Every session is revoked and every token issued before now stops
+         *     verifying, so an access token still sitting in another tab dies with the
+         *     account rather than outliving it. The response is the last thing this
+         *     account will ever receive.
+         */
+        delete: operations["erase_me_api_v1_auth_me_delete"];
         options?: never;
         head?: never;
         /**
@@ -245,6 +261,29 @@ export interface paths {
          *     no shape of request that edits somebody else.
          */
         patch: operations["update_me_api_v1_auth_me_patch"];
+        trace?: never;
+    };
+    "/api/v1/auth/me/erasure-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What deleting this account would destroy
+         * @description Read before the delete, so the confirmation states facts.
+         *
+         *     "4 plans and 2 invoices" is a different decision from "0 and 0", and a
+         *     generic warning makes both look the same.
+         */
+        get: operations["erasure_impact_api_v1_auth_me_erasure_impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/courses": {
@@ -297,6 +336,35 @@ export interface paths {
         };
         /** The bundle a client should read */
         get: operations["get_bundle_api_v1_courses__course_ref__bundle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{course_ref}/conditions-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What race day has actually been like
+         * @description Public, like the rest of recon. **Observed, never modelled.**
+         *
+         *     Every figure is reanalysis from the weather archive for this course's own
+         *     coordinates, at the race's own start hour, on the day the race was held.
+         *     Where a value is unavailable it is absent: a lake course has no
+         *     sea-surface temperature, so it has no water temperature and therefore no
+         *     wetsuit likelihood, rather than one inferred from the air.
+         *
+         *     There is no finish-time distribution. It needs actual results, which this
+         *     system does not have and cannot obtain, and the prototype's was drawn.
+         */
+        get: operations["get_conditions_history_api_v1_courses__course_ref__conditions_history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -923,6 +991,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/races/{race_id}/race-week": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The race-week checklist
+         * @description Dated, checkable tasks. **Generated on read, idempotently.**
+         *
+         *     The ICS export has always derived the right dates from the event date — a
+         *     Tuesday race gets a Saturday check-in — but a calendar event cannot be
+         *     ticked off and nothing was stored, so "have I handed in the special-needs
+         *     bag?" had no answer. Both now come from one derivation, so the calendar
+         *     and the checklist cannot disagree about the same week.
+         *
+         *     Generating here rather than in a job means a race entered five minutes ago
+         *     has a checklist, instead of waiting for a cron that may not run before race
+         *     week.
+         */
+        get: operations["get_race_week_api_v1_races__race_id__race_week_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/races/{race_id}/race-week/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add your own race-week task
+         * @description Sits beside the derived ones, in date order. To the athlete it is one
+         *     list, so it is one list.
+         */
+        post: operations["add_race_week_task_api_v1_races__race_id__race_week_tasks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/races/race-week/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a task you added
+         * @description Yours only. A derived task is part of the race rather than a note, and
+         *     removing "bike check-in" because it is inconvenient is not something the
+         *     checklist should help with — ticking it off is.
+         */
+        delete: operations["delete_race_week_task_api_v1_races_race_week_tasks__task_id__delete"];
+        options?: never;
+        head?: never;
+        /** Tick a task off, or un-tick it */
+        patch: operations["set_race_week_task_api_v1_races_race_week_tasks__task_id__patch"];
+        trace?: never;
+    };
     "/api/v1/plans/{plan_id}/export": {
         parameters: {
             query?: never;
@@ -1292,6 +1434,35 @@ export interface paths {
         };
         /** Plans grouped as the screen groups them */
         get: operations["get_my_plans_api_v1_my_plans_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/season-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A season at a glance, and constraint drift across it
+         * @description The Season Pass view. **Gated on the tier that is sold with it.**
+         *
+         *     Two things, and the second is the one that did not exist anywhere:
+         *     constraint history was per key (`GET /constraints/{key}/history`), which
+         *     answers "how has my FTP moved?" and cannot answer "what changed about me
+         *     last year?" — the question the tier is sold on. Assembling that from eight
+         *     separate requests is something a client should not have to do.
+         *
+         *     Seasons are grouped from October rather than January, so a race in the new
+         *     year sits with the autumn that prepared it.
+         */
+        get: operations["get_season_history_api_v1_season_history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2354,6 +2525,26 @@ export interface components {
          * @enum {string}
          */
         AdminRole: "support" | "ops" | "admin";
+        /**
+         * AdvisoryOut
+         * @description Where this plan sits outside the evidence behind its own model.
+         *
+         *     Distinct from ``assumed_fields``, which is about inputs the athlete did not
+         *     supply. Every input can be present and the answer still rest on ground the
+         *     data does not cover — a heat decrement applied over a leg far longer than
+         *     the hour it was measured over, a curve held flat above its top knot.
+         *
+         *     Says which numbers are soft, and never by how much: there is no correction
+         *     term to quote, and quoting one would be inventing it.
+         */
+        AdvisoryOut: {
+            /** Key */
+            key: string;
+            /** Tag */
+            tag: string;
+            /** Text */
+            text: string;
+        };
         /** AffectedPlanOut */
         AffectedPlanOut: {
             /**
@@ -2837,6 +3028,91 @@ export interface components {
          * @enum {string}
          */
         CompareState: "good" | "ok" | "warn" | "bad";
+        /**
+         * ConditionsHistoryOut
+         * @description What race day has actually been like here.
+         *
+         *     **There is no finish-time distribution.** It needs real results, which this
+         *     system does not have and cannot obtain, so the field is absent rather than
+         *     drawn — `finish_times_available` says so in as many words, so a client does
+         *     not have to infer it from a missing key.
+         */
+        ConditionsHistoryOut: {
+            /** Course Slug */
+            course_slug: string;
+            /** Course Name */
+            course_name: string;
+            summary: components["schemas"]["ConditionsSummaryOut"];
+            /** Observations */
+            observations?: components["schemas"]["ConditionsObservationOut"][];
+            /**
+             * Finish Times Available
+             * @default false
+             */
+            finish_times_available: boolean;
+            /** Empty Reason */
+            empty_reason?: string | null;
+        };
+        /**
+         * ConditionsObservationOut
+         * @description One past edition's race-morning weather, as the archive recorded it.
+         */
+        ConditionsObservationOut: {
+            /**
+             * Observed On
+             * Format: date
+             */
+            observed_on: string;
+            /** Observed Hour */
+            observed_hour: number;
+            /** Air Temp C */
+            air_temp_c: number;
+            /** Humidity Pct */
+            humidity_pct: number;
+            /** Wind Speed Ms */
+            wind_speed_ms: number;
+            /** Wind Dir Deg */
+            wind_dir_deg?: number | null;
+            /** Precipitation Mm */
+            precipitation_mm?: number | null;
+            /** Cloud Cover Pct */
+            cloud_cover_pct?: number | null;
+            /** Water Temp C */
+            water_temp_c?: number | null;
+        };
+        /**
+         * ConditionsSummaryOut
+         * @description Medians, and the count they rest on.
+         *
+         *     The count travels with every figure deliberately: a median of two years is
+         *     a different claim from a median of ten, and a panel showing the number
+         *     without it makes them look the same.
+         */
+        ConditionsSummaryOut: {
+            /** Observations */
+            observations: number;
+            /** Median Air Temp C */
+            median_air_temp_c?: number | null;
+            /** Median Humidity Pct */
+            median_humidity_pct?: number | null;
+            /** Median Wind Speed Ms */
+            median_wind_speed_ms?: number | null;
+            /** Warmest Air Temp C */
+            warmest_air_temp_c?: number | null;
+            /** Coolest Air Temp C */
+            coolest_air_temp_c?: number | null;
+            /**
+             * Water Observations
+             * @default 0
+             */
+            water_observations: number;
+            /** Median Water Temp C */
+            median_water_temp_c?: number | null;
+            /** Wetsuit Legal Fraction */
+            wetsuit_legal_fraction?: number | null;
+            /** Wet Start Fraction */
+            wet_start_fraction?: number | null;
+        };
         /** ConstraintHistoryOut */
         ConstraintHistoryOut: {
             /**
@@ -2902,6 +3178,24 @@ export interface components {
              */
             stale: boolean;
         };
+        /** ConstraintPointOut */
+        ConstraintPointOut: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: number;
+            /** Unit */
+            unit: string;
+            /** Source */
+            source: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Change Reason */
+            change_reason?: string | null;
+        };
         /**
          * ConstraintRefOut
          * @description The "Why this?" drawer. A solved-time snapshot, not a live join.
@@ -2937,7 +3231,18 @@ export interface components {
          *     byte-identical numeric output.
          * @enum {string}
          */
-        ConstraintSource: "measured" | "tested" | "manual" | "estimated";
+        ConstraintSource: "measured" | "tested" | "manual" | "estimated" | "imported";
+        /** ConstraintTrackOut */
+        ConstraintTrackOut: {
+            /** Key */
+            key: string;
+            /** Unit */
+            unit: string;
+            /** Points */
+            points?: components["schemas"]["ConstraintPointOut"][];
+            /** Change */
+            change?: number | null;
+        };
         /** ConstraintWrite */
         ConstraintWrite: {
             /** Value */
@@ -3188,6 +3493,42 @@ export interface components {
              * @default false
              */
             purchasable_per_race: boolean;
+        };
+        /**
+         * ErasureImpactOut
+         * @description What deleting this account would destroy, in this account's own numbers.
+         *
+         *     Returned before the deletion so the confirmation screen states facts rather
+         *     than a generic warning — "4 plans and 2 invoices" is a different decision
+         *     from "0 and 0".
+         */
+        ErasureImpactOut: {
+            /** Plans */
+            plans: number;
+            /** Races */
+            races: number;
+            /** Invoices */
+            invoices: number;
+            /** Active Subscription */
+            active_subscription: boolean;
+            /** Coach Links */
+            coach_links: number;
+        };
+        /**
+         * ErasureRequest
+         * @description A typed confirmation, not a boolean.
+         *
+         *     A boolean can be sent by a mis-wired client. This cannot be undone, so the
+         *     caller has to send back the exact words.
+         */
+        ErasureRequest: {
+            /**
+             * Confirmation
+             * @description Must be exactly 'DELETE MY ACCOUNT'
+             */
+            confirmation: string;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * ErrorCode
@@ -3541,9 +3882,14 @@ export interface components {
         NotificationSeverity: "info" | "ok" | "warn" | "bad";
         /**
          * NotificationType
+         * @description Every kind of thing the system tells an athlete about.
+         *
+         *     Each one corresponds to an event the code actually produces. There is no
+         *     entry here for something a job might emit one day: an unreachable type
+         *     shows up in the preferences screen as a switch that governs nothing.
          * @enum {string}
          */
-        NotificationType: "drift" | "week" | "cutoff" | "bundle" | "analysis" | "digest";
+        NotificationType: "drift" | "week" | "cutoff" | "bundle" | "analysis" | "digest" | "plan_ready" | "coach_shared" | "athlete_accepted" | "payment_succeeded" | "payment_failed" | "subscription_renewing" | "support_access";
         /** OverrideRequest */
         OverrideRequest: {
             /** Constraint Key */
@@ -3660,6 +4006,8 @@ export interface components {
             forecast_snapshot?: Record<string, never>;
             /** Warnings */
             warnings?: components["schemas"]["ResponseWarningOut"][];
+            /** Advisories */
+            advisories?: components["schemas"]["AdvisoryOut"][];
         };
         /**
          * PlanDraftPatch
@@ -3938,6 +4286,16 @@ export interface components {
             plan_version?: number | null;
             /** Plan Status */
             plan_status: string;
+            /**
+             * Display Status
+             * @default none
+             */
+            display_status: string;
+            /**
+             * Purchased
+             * @default false
+             */
+            purchased: boolean;
             /** Feasibility */
             feasibility: string;
             /** Goal Minutes */
@@ -4103,6 +4461,73 @@ export interface components {
             bib?: string | null;
             status?: components["schemas"]["RaceStatus"] | null;
         };
+        /**
+         * RaceWeekOut
+         * @description The checklist, and whether it is worth showing yet.
+         */
+        RaceWeekOut: {
+            /**
+             * Race Id
+             * Format: uuid
+             */
+            race_id: string;
+            /**
+             * Event Date
+             * Format: date
+             */
+            event_date: string;
+            /** Visible */
+            visible: boolean;
+            /** Tasks */
+            tasks?: components["schemas"]["RaceWeekTaskOut"][];
+            /**
+             * Remaining
+             * @default 0
+             */
+            remaining: number;
+        };
+        /** RaceWeekTaskCreate */
+        RaceWeekTaskCreate: {
+            /** Title */
+            title: string;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /** Description */
+            description?: string | null;
+        };
+        /** RaceWeekTaskOut */
+        RaceWeekTaskOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /** Generated */
+            generated: boolean;
+            /** Completed At */
+            completed_at?: string | null;
+            /** Days Away */
+            days_away?: number | null;
+        };
+        /** RaceWeekTaskPatch */
+        RaceWeekTaskPatch: {
+            /** Completed */
+            completed: boolean;
+        };
         /** RefundOut */
         RefundOut: {
             /**
@@ -4199,6 +4624,73 @@ export interface components {
             title: string;
             /** Subtitle */
             subtitle: string;
+        };
+        /**
+         * SeasonHistoryOut
+         * @description A season at a glance, and how the athlete moved across it.
+         */
+        SeasonHistoryOut: {
+            /** Seasons */
+            seasons?: components["schemas"]["SeasonOut"][];
+            /** Constraints */
+            constraints?: components["schemas"]["ConstraintTrackOut"][];
+        };
+        /** SeasonOut */
+        SeasonOut: {
+            /** Season */
+            season: number;
+            /** Label */
+            label: string;
+            /** Planned Count */
+            planned_count: number;
+            /** Raced Count */
+            raced_count: number;
+            /** Races */
+            races?: components["schemas"]["SeasonRaceOut"][];
+        };
+        /** SeasonRaceOut */
+        SeasonRaceOut: {
+            /**
+             * Race Id
+             * Format: uuid
+             */
+            race_id: string;
+            /** Course Name */
+            course_name: string;
+            /** Course Place */
+            course_place: string;
+            /** Course Slug */
+            course_slug: string;
+            /** Distance Type */
+            distance_type: string;
+            /**
+             * Event Date
+             * Format: date
+             */
+            event_date: string;
+            /** Race Status */
+            race_status: string;
+            /** Plan Id */
+            plan_id?: string | null;
+            /** Plan Version */
+            plan_version?: number | null;
+            /** Goal Minutes */
+            goal_minutes?: number | null;
+            /** Projected Minutes */
+            projected_minutes?: number | null;
+            /** Actual Minutes */
+            actual_minutes?: number | null;
+            /**
+             * Has Analysis
+             * @default false
+             */
+            has_analysis: boolean;
+            /** Goal Label */
+            goal_label?: string | null;
+            /** Projected Label */
+            projected_label?: string | null;
+            /** Actual Label */
+            actual_label?: string | null;
         };
         /** SegmentOut */
         SegmentOut: {
@@ -4990,6 +5482,41 @@ export interface operations {
             };
         };
     };
+    erase_me_api_v1_auth_me_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ErasureRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErasureImpactOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_me_api_v1_auth_me_patch: {
         parameters: {
             query?: never;
@@ -5012,6 +5539,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    erasure_impact_api_v1_auth_me_erasure_impact_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErasureImpactOut"];
                 };
             };
             /** @description Validation Error */
@@ -5114,6 +5672,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BundleDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_conditions_history_api_v1_courses__course_ref__conditions_history_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                course_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConditionsHistoryOut"];
                 };
             };
             /** @description Validation Error */
@@ -6335,6 +6926,144 @@ export interface operations {
             };
         };
     };
+    get_race_week_api_v1_races__race_id__race_week_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                race_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RaceWeekOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_race_week_task_api_v1_races__race_id__race_week_tasks_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                race_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RaceWeekTaskCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RaceWeekTaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_race_week_task_api_v1_races_race_week_tasks__task_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_race_week_task_api_v1_races_race_week_tasks__task_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RaceWeekTaskPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RaceWeekTaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_exports_api_v1_plans__plan_id__export_get: {
         parameters: {
             query?: never;
@@ -6933,6 +7662,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MyPlansOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_season_history_api_v1_season_history_get: {
+        parameters: {
+            query?: {
+                /** @description Only constraint changes from this date onward */
+                since?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeasonHistoryOut"];
                 };
             };
             /** @description Validation Error */
