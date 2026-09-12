@@ -38,6 +38,16 @@ const LEG_TINT: Record<string, string> = {
 };
 
 /** The clock an athlete reads, from the plan's own start time. Never 06:40. */
+/** Mirrors `exports/tokens.py` STATE_GLYPHS, so screen and paper agree. */
+const GATE_GLYPH: Record<string, string> = { clear: "OK", tight: "!", bad: "X" };
+
+/** What each glyph means, for a screen reader and for a print legend. */
+const GATE_STATE_LABEL: Record<string, string> = {
+  clear: "Clears this cut-off",
+  tight: "Tight against this cut-off",
+  bad: "Misses this cut-off",
+};
+
 function wallClock(startTimeLocal: string | null | undefined, elapsedMinutes: number): string {
   if (!startTimeLocal) return "—";
   const [h, m] = startTimeLocal.split(":").map(Number);
@@ -256,14 +266,26 @@ function PlanBody({
       {/* ---------------- Tabs ---------------- */}
       <div style={{ position: "sticky", top: 68, zIndex: 60, background: "rgba(241,238,232,.94)", backdropFilter: "blur(14px)", borderBottom: "1px solid rgba(21,20,15,.09)", marginTop: 40 }}>
         <div style={{ maxWidth: 1360, margin: "0 auto", padding: "0 56px", height: 54, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 32 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+          {/* Buttons in a tablist, not clickable divs.
+              A div with onClick is unreachable by keyboard and announces
+              nothing to a screen reader: the whole plan was navigable by mouse
+              only. `aria-selected` carries which panel is open, so the state
+              is not conveyed by the orange underline alone. */}
+          <div role="tablist" aria-label="Plan sections" style={{ display: "flex", alignItems: "center", gap: 2 }}>
             {TABS.map((t) => {
               const active = t.key === tab;
               return (
-                <div key={t.key} onClick={() => { setTab(t.key); setDrawerKey(null); }} style={{ position: "relative", display: "flex", alignItems: "center", gap: 8, height: 54, padding: "0 15px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                <button
+                  key={t.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => { setTab(t.key); setDrawerKey(null); }}
+                  style={{ position: "relative", display: "flex", alignItems: "center", gap: 8, height: 54, padding: "0 15px", cursor: "pointer", whiteSpace: "nowrap", background: "none", border: "none", font: "inherit" }}
+                >
                   <span style={{ fontSize: 14, fontWeight: active ? 600 : 500, letterSpacing: "-.015em", color: active ? "#15140F" : "#6B6455" }}>{t.name}</span>
-                  <span style={{ position: "absolute", left: 10, right: 10, bottom: 0, height: 2, background: active ? "#E4622F" : "transparent" }} />
-                </div>
+                  <span aria-hidden="true" style={{ position: "absolute", left: 10, right: 10, bottom: 0, height: 2, background: active ? "#E4622F" : "transparent" }} />
+                </button>
               );
             })}
           </div>
@@ -301,8 +323,23 @@ function PlanBody({
                             <div className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: "#A8A192" }}>{wallClock(plan.start_time_local, g.eta_minutes)}</div>
                             <div className="mono" style={{ fontSize: 16, marginTop: 3 }}>{formatClock(g.eta_minutes)}</div>
                           </div>
-                          <div style={{ display: "flex", justifyContent: "center", paddingTop: 5 }}>
-                            <span style={{ width: 13, height: 13, borderRadius: "50%", background: color, border: "3px solid #FBF8F2", boxShadow: `0 0 0 1.5px ${color}` }} />
+                          <div style={{ display: "flex", justifyContent: "center", paddingTop: 3 }}>
+                            {/* The glyph, not just the colour. This is printed on
+                                whatever machine is in the house and read at hour
+                                nine through a wet sleeve; a state carried by hue
+                                alone is gone in greyscale and invisible to a
+                                colour-blind reader. Same three marks the PDF
+                                uses — see `exports/tokens.py` STATE_GLYPHS. */}
+                            <span
+                              className="mono"
+                              title={GATE_STATE_LABEL[g.state] ?? g.state}
+                              style={{ minWidth: 18, height: 18, borderRadius: 9, background: color, color: "#fff", fontSize: 9, fontWeight: 700, lineHeight: "18px", textAlign: "center", padding: "0 4px" }}
+                            >
+                              {GATE_GLYPH[g.state] ?? "—"}
+                            </span>
+                            <span className="sr-only">
+                              {GATE_STATE_LABEL[g.state] ?? g.state}
+                            </span>
                           </div>
                           <div>
                             <div style={{ fontSize: 16.5, fontWeight: 500, letterSpacing: "-.022em" }}>{g.name.replace(/_/g, " ")}</div>

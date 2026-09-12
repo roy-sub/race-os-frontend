@@ -30,6 +30,21 @@ export type Feasibility = RaceCard["feasibility"];
  * not styled renders in the neutral tone with its own label rather than
  * disappearing or being silently recoloured as something it is not.
  */
+/**
+ * The glyph beside every feasibility state.
+ *
+ * Mirrors `raceos/exports/tokens.py` STATE_GLYPHS, and exists for the same
+ * reason: these get printed on whatever machine is in the house, and a state
+ * carried by colour alone is unreadable in grey. Colour stays — it is faster
+ * to read in colour — but it is never asked to work on its own.
+ */
+export const FEAS_GLYPH: Record<string, string> = {
+  CLEAR: "OK",
+  TIGHT: "!",
+  INFEASIBLE: "X",
+  STALE: "\u2020", // dagger, as the PDF marks non-official provenance
+};
+
 export const FEAS_STYLE: Record<string, { fg: string; dot: string; border: string; note: string }> = {
   CLEAR: {
     fg: "#3E7B55",
@@ -66,6 +81,11 @@ export const FEAS_FALLBACK = {
 
 export function feasStyle(value: string | null | undefined) {
   return (value && FEAS_STYLE[value]) || FEAS_FALLBACK;
+}
+
+/** The glyph for a state, or an em dash when there is nothing to say. */
+export function feasGlyph(value: string | null | undefined): string {
+  return (value && FEAS_GLYPH[value]) || "\u2014";
 }
 
 /**

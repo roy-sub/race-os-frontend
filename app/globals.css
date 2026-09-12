@@ -186,3 +186,143 @@ input[type=range]::-moz-range-thumb{ width:20px; height:20px; border-radius:50%;
   .auth-form{ padding:32px 22px 48px !important; }
   .auth-form > div{ max-width:none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   Print — the same artefact as the PDF download.
+   ---------------------------------------------------------------------------
+   An athlete who presses Ctrl-P instead of finding the download button must
+   end up with the same document, not a screenshot of a web page. The rules
+   below mirror `raceos/exports/pdf.py`: A5, the same margins, the same type
+   scale in points, the same tokens.
+
+   **Monochrome legibility is the hard requirement.** Most of these are printed
+   on whatever machine is in the house, and a plan whose feasibility state is
+   carried by colour alone becomes unreadable in grey. Every state already
+   carries a glyph in the PDF; here the colours are kept but never asked to
+   work alone, and the accent is the only one that survives, because it is
+   decoration rather than meaning.
+*/
+@media print {
+  @page {
+    size: A5;
+    margin: 9mm 9mm 13mm 9mm;
+  }
+
+  :root { --accent: #E4622F; }
+
+  html, body {
+    background: #FBF8F2 !important;
+    color: #1C1917 !important;
+    font-size: 9.5pt !important;
+    line-height: 1.35 !important;
+    margin: 0 !important;
+    /* Backgrounds and rules are structure here, not decoration: without them
+       the splits ladder loses the lines that separate one leg from the next. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Anything that is navigation, chrome or an action cannot be pressed on
+     paper, so it is not printed. Marked at the element rather than guessed
+     from the tag, so a new header does not silently start appearing. */
+  header, nav, footer,
+  button, [role="button"], input, select, textarea,
+  .no-print, [data-print="hide"],
+  /* The boot shutter is a fixed, full-bleed dark panel that fades out on its
+     own. Printing is not animated, so without this it lands on the paper as a
+     solid black A5 sheet and nothing else. Found by printing the page rather
+     than by reading the stylesheet. */
+  #om-boot {
+    display: none !important;
+  }
+
+  /* The page frame: the screen's centred column and its side gutters are a
+     browser-window idea and waste a third of an A5 sheet. */
+  main, .om-rise, [data-print="sheet"] {
+    max-width: none !important;
+    min-width: 0 !important;
+    width: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* The PDF's type scale, in the PDF's units. */
+  h1 { font-size: 15pt !important; letter-spacing: -0.2pt !important; margin: 0 0 1mm !important; }
+  h2 {
+    font-size: 8pt !important; text-transform: uppercase; letter-spacing: 0.8pt !important;
+    color: #6B6459 !important; margin: 4mm 0 1.5mm !important;
+    border-bottom: 0.4pt solid rgba(28,25,23,.18); padding-bottom: 0.8mm;
+  }
+  h3, h4 { font-size: 9.5pt !important; margin: 2mm 0 1mm !important; }
+
+  table { width: 100% !important; border-collapse: collapse !important; }
+  th {
+    text-align: left; font-size: 8pt !important; text-transform: uppercase;
+    letter-spacing: 0.5pt !important; color: #6B6459 !important; font-weight: 600;
+    padding: 0.6mm 1.5mm 0.6mm 0 !important;
+  }
+  td {
+    padding: 0.9mm 1.5mm 0.9mm 0 !important; font-size: 9.5pt !important;
+    border-top: 0.3pt solid rgba(28,25,23,.18) !important; vertical-align: top;
+  }
+  /* Times and watts line up in columns or they cannot be compared at a glance,
+     which is the only reason to print a splits table at all. */
+  .mono, .num, td.num {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* A row of numbers split across a page break is a row you cannot read. */
+  tr, li, .card, [data-print="keep"] { break-inside: avoid; page-break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
+
+  /* Cards become plain blocks: a drop shadow is a screen affordance and prints
+     as a grey smear. */
+  [style*="box-shadow"] { box-shadow: none !important; }
+
+  /* Charts are the one thing that genuinely cannot be reproduced in
+     monochrome, and every chart on this site already has a table equivalent
+     beside it. Print the table. */
+  svg.chart, canvas, [data-print="chart"] { display: none !important; }
+  [data-print="chart-table"] { display: block !important; }
+
+  /* Links: a bare underline on paper points nowhere. The href is only worth
+     printing when it leaves the site. */
+  a { color: inherit !important; text-decoration: none !important; }
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 7.5pt;
+    color: #6B6459;
+  }
+
+  /* Deliberately NOT `animation: none`.
+     Print captures one static frame, so nothing animates on paper anyway — but
+     killing animations *resets* any element an animation had faded out, and
+     this app dismisses its boot and route-transition overlays exactly that
+     way. The rule resurrected a full-bleed panel at opacity 1 and printed it
+     over the plan. Found by printing the page; kept as a comment so it is not
+     helpfully re-added. */
+
+  /* Overlays that dismiss themselves by ending an animation at opacity 0.
+     Hidden explicitly, which is robust whether or not the animation has run. */
+  #om-boot, .om-transition, [data-overlay] {
+    display: none !important;
+  }
+
+  /* Actions rendered as links rather than buttons — "Race card", "Export",
+     "My plans". A button element is caught by the rule above; these are not,
+     and an action you cannot press is not worth the ink. */
+  .btn-accent, .btn-dark-to-accent, [class*="btn-"] {
+    display: none !important;
+  }
+
+  /* Tab strips: on paper there is only the panel that was open, and a row of
+     tabs you cannot click just tells the reader what they are missing. */
+  [role="tablist"], .tab-strip, [data-print="tabs"] {
+    display: none !important;
+  }
+
+  /* The breadcrumb is a way back, and paper has no back. */
+  [aria-label="Breadcrumb"] { display: none !important; }
+}
