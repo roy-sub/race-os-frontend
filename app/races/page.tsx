@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { selectable } from "@/lib/a11y";
 import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
 import { Footer } from "@/components/Footer";
@@ -296,7 +297,7 @@ export default function RaceDirectoryPage() {
             {DIST_FILTERS.map((d) => {
               const on = dist === d;
               return (
-                <div key={d} onClick={() => setDist(d)} className="row-hover-border" style={{ display: "flex", alignItems: "center", height: 32, padding: "0 12px", borderRadius: 6, cursor: "pointer", whiteSpace: "nowrap", background: on ? "#15140F" : "#FBF8F2", border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.12)"}`, fontSize: 12.5, fontWeight: on ? 600 : 500, color: on ? "#FBF8F2" : "#5C574B" }}>{d}</div>
+                <div key={d} {...selectable(() => setDist(d), dist === d)} className="row-hover-border" style={{ display: "flex", alignItems: "center", height: 32, padding: "0 12px", borderRadius: 6, cursor: "pointer", whiteSpace: "nowrap", background: on ? "#15140F" : "#FBF8F2", border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.12)"}`, fontSize: 12.5, fontWeight: on ? 600 : 500, color: on ? "#FBF8F2" : "#5C574B" }}>{d}</div>
               );
             })}
           </div>
@@ -306,7 +307,7 @@ export default function RaceDirectoryPage() {
               {SORTS.map((so) => {
                 const on = sort === so;
                 return (
-                  <span key={so} onClick={() => setSort(so)} className="mono" style={{ padding: "7px 12px", borderRadius: 5, cursor: "pointer", fontSize: 9.5, letterSpacing: ".1em", background: on ? "#15140F" : "transparent", color: on ? "#FBF8F2" : "#8C8578", whiteSpace: "nowrap" }}>{so}</span>
+                  <span key={so} {...selectable(() => setSort(so), sort === so)} className="mono" style={{ padding: "7px 12px", borderRadius: 5, cursor: "pointer", fontSize: 9.5, letterSpacing: ".1em", background: on ? "#15140F" : "transparent", color: on ? "#FBF8F2" : "#8C8578", whiteSpace: "nowrap" }}>{so}</span>
                 );
               })}
             </div>

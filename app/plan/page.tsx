@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useMemo, useState } from "react";
+import { selectable } from "@/lib/a11y";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AccountHeader } from "@/components/AccountHeader";
@@ -591,7 +592,7 @@ function PlanBody({
               {plan.bags.map((b, i) => {
                 const on = i === bagIdx;
                 return (
-                  <div key={b.key} onClick={() => setBagIdx(i)} style={{ padding: "16px 18px", borderRadius: 10, cursor: "pointer", background: on ? "#15140F" : "#FBF8F2", border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.1)"}` }}>
+                  <div key={b.key} {...selectable(() => setBagIdx(i), on)} style={{ padding: "16px 18px", borderRadius: 10, cursor: "pointer", background: on ? "#15140F" : "#FBF8F2", border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.1)"}` }}>
                     <div style={{ fontSize: 15.5, fontWeight: 600, letterSpacing: "-.02em", color: on ? "#FBF8F2" : "#15140F" }}>{b.name}</div>
                     <div className="mono" style={{ fontSize: 9, letterSpacing: ".13em", color: on ? "rgba(251,248,242,.5)" : "#8C8578", marginTop: 6 }}>{b.item_count} ITEMS · {b.when_label.toUpperCase()}</div>
                   </div>
@@ -603,7 +604,7 @@ function PlanBody({
                 const id = `${plan.bags[bagIdx].key}:${item.ordinal}`;
                 const done = packed[id];
                 return (
-                  <div key={item.ordinal} onClick={() => setPacked((p) => ({ ...p, [id]: !p[id] }))} style={{ display: "grid", gridTemplateColumns: "22px minmax(0,1fr) 70px", gap: 16, padding: "15px 0", borderBottom: "1px solid rgba(21,20,15,.06)", cursor: "pointer" }}>
+                  <div key={item.ordinal} {...selectable(() => setPacked((p) => ({ ...p, [id]: !p[id] })), Boolean(packed[id]))} style={{ display: "grid", gridTemplateColumns: "22px minmax(0,1fr) 70px", gap: 16, padding: "15px 0", borderBottom: "1px solid rgba(21,20,15,.06)", cursor: "pointer" }}>
                     <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 18, height: 18, borderRadius: 4, marginTop: 2, background: done ? "#5C9E72" : "transparent", border: `1px solid ${done ? "#5C9E72" : "rgba(21,20,15,.22)"}` }}>
                       {done && <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.5 6.2 4.8 8.5 9.5 3.8" stroke="#fff" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></svg>}
                     </span>

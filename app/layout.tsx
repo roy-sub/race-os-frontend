@@ -19,9 +19,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
       </head>
       <body>
+        {/* First in the tab order, invisible until focused. Every screen opens
+            with a header and a nav; without this a keyboard or screen-reader
+            user walks through both again on every navigation. */}
+        <a href="#content" className="skip-link">Skip to content</a>
         <BootLoader />
         <ScrollFx />
-        <Providers>{children}</Providers>
+        <Providers>
+          <div id="content">{children}</div>
+        </Providers>
       </body>
     </html>
   );

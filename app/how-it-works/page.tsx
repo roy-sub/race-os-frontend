@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { selectable } from "@/lib/a11y";
 import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
 import { Footer } from "@/components/Footer";
@@ -66,7 +67,7 @@ export default function HowItWorksPage() {
                   {STAGES.map((st, k) => {
                     const active = k === stage;
                     return (
-                      <div key={st.n} onClick={() => setStage(k)} className="row-hover-faint" style={{ display: "flex", alignItems: "center", gap: 13, padding: "15px 16px", borderRadius: 8, cursor: "pointer", background: active ? "#EAE3D6" : "transparent" }}>
+                      <div key={st.n} {...selectable(() => setStage(k), stage === k)} className="row-hover-faint" style={{ display: "flex", alignItems: "center", gap: 13, padding: "15px 16px", borderRadius: 8, cursor: "pointer", background: active ? "#EAE3D6" : "transparent" }}>
                         <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: "50%", flex: "none", background: active ? "#E4622F" : "rgba(21,20,15,.08)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: active ? "#fff" : "#8C8578" }}>{st.n}</span>
                         <span style={{ minWidth: 0 }}>
                           <span style={{ display: "block", fontSize: 14.5, fontWeight: active ? 600 : 500, letterSpacing: "-.018em", color: active ? "#15140F" : "#5C574B", whiteSpace: "nowrap" }}>{st.name}</span>

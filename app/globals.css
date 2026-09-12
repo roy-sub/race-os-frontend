@@ -326,3 +326,52 @@ input[type=range]::-moz-range-thumb{ width:20px; height:20px; border-radius:50%;
   /* The breadcrumb is a way back, and paper has no back. */
   [aria-label="Breadcrumb"] { display: none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   Focus, and the way in.
+   ---------------------------------------------------------------------------
+   There were no focus styles at all. Chrome's default ring is suppressed by
+   most of the custom backgrounds here, so a keyboard user could tab through
+   the app with no idea where they were — which makes every other keyboard fix
+   pointless.
+
+   `:focus-visible` rather than `:focus`, so a mouse click does not leave a
+   ring behind, and a two-tone outline so it stays visible on both the light
+   paper and the dark panels. */
+:focus-visible {
+  outline: 2px solid #15140F;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.btn-accent:focus-visible,
+[style*="background: #E4622F"]:focus-visible,
+[style*="background:#E4622F"]:focus-visible {
+  outline-color: #15140F;
+  box-shadow: 0 0 0 4px rgba(251, 248, 242, .9);
+}
+
+/* Skip link: the first thing in the tab order, invisible until focused. Every
+   page here opens with a header and a nav, and without this a keyboard or
+   screen-reader user re-reads them on every navigation before reaching the
+   plan. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 1000;
+}
+.skip-link:focus {
+  left: 8px;
+  top: 8px;
+  width: auto;
+  height: auto;
+  padding: 10px 16px;
+  background: #15140F;
+  color: #FBF8F2;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* A target for it, and a landmark for assistive technology. */
+main:focus { outline: none; }

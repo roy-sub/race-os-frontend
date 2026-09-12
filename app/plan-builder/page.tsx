@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { clickable, selectable } from "@/lib/a11y";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mark } from "@/components/Mark";
@@ -287,7 +288,7 @@ function BuilderScreen() {
               const cur = n === step;
               const reachable = canReach(n);
               return (
-                <div key={name} onClick={() => reachable && setStep(n)} style={{ display: "flex", alignItems: "center", cursor: reachable ? "pointer" : "not-allowed" }}>
+                <div key={name} {...clickable(() => { if (reachable) setStep(n); })} style={{ display: "flex", alignItems: "center", cursor: reachable ? "pointer" : "not-allowed" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "0 12px" }}>
                     <span className="mono" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: "50%", flex: "none", background: cur ? "#E4622F" : done ? "#15140F" : "transparent", border: `1px solid ${cur ? "#E4622F" : done ? "#15140F" : "rgba(21,20,15,.24)"}`, fontSize: 9.5, color: cur || done ? "#FBF8F2" : "#A8A192" }}>
                       {done ? "✓" : n}
@@ -637,7 +638,7 @@ function BuilderScreen() {
                 ]).map((g) => {
                   const on = risk === g.k;
                   return (
-                    <div key={g.k} onClick={() => setRisk(g.k)} style={{ borderRadius: 12, padding: "24px 26px 26px", cursor: "pointer", background: on ? "#15140F" : "#FBF8F2", border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.1)"}` }}>
+                    <div key={g.k} {...selectable(() => setRisk(g.k), risk === g.k)} style={{ borderRadius: 12, padding: "24px 26px 26px", cursor: "pointer", background: on ? "#15140F" : "#FBF8F2", border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.1)"}` }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <span className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: on ? "#E4622F" : "#8C8578" }}>{g.kicker}</span>
                         <span style={{ width: 16, height: 16, borderRadius: "50%", border: `1px solid ${on ? "#E4622F" : "rgba(21,20,15,.24)"}`, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
@@ -678,7 +679,7 @@ function BuilderScreen() {
                 </p>
               </div>
 
-              <div onClick={() => setNightFlag((n) => !n)} style={{ borderRadius: 12, padding: "26px 28px", marginTop: 16, cursor: "pointer", background: nightFlag ? "rgba(228,98,47,.07)" : "#FBF8F2", border: `1px solid ${nightFlag ? "rgba(228,98,47,.36)" : "rgba(21,20,15,.1)"}` }}>
+              <div {...selectable(() => setNightFlag((n) => !n), nightFlag)} style={{ borderRadius: 12, padding: "26px 28px", marginTop: 16, cursor: "pointer", background: nightFlag ? "rgba(228,98,47,.07)" : "#FBF8F2", border: `1px solid ${nightFlag ? "rgba(228,98,47,.36)" : "rgba(21,20,15,.1)"}` }}>
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20 }}>
                   <div>
                     <div className="mono" style={{ fontSize: 9, letterSpacing: ".15em", color: "#8C8578" }}>FINISHING IN THE DARK</div>
@@ -1201,7 +1202,7 @@ function BagsStep({ plan, onBack, onNext }: { plan: SolvedPlan; onBack: () => vo
         {plan.bags.map((b, i) => {
           const on = i === active;
           return (
-            <div key={b.key} onClick={() => setActive(i)} style={{ padding: "12px 16px", borderRadius: 8, cursor: "pointer", background: on ? "#15140F" : "#FBF8F2", border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.12)"}` }}>
+            <div key={b.key} {...selectable(() => setActive(i), on)} style={{ padding: "12px 16px", borderRadius: 8, cursor: "pointer", background: on ? "#15140F" : "#FBF8F2", border: `1px solid ${on ? "#15140F" : "rgba(21,20,15,.12)"}` }}>
               <div style={{ fontSize: 14.5, fontWeight: 600, letterSpacing: "-.018em", color: on ? "#FBF8F2" : "#15140F" }}>{b.name}</div>
               <div className="mono" style={{ fontSize: 9, letterSpacing: ".12em", color: on ? "rgba(251,248,242,.5)" : "#8C8578", marginTop: 5 }}>{b.item_count} ITEMS</div>
             </div>

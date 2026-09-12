@@ -18,6 +18,7 @@
  */
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { selectable } from "@/lib/a11y";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AccountHeader } from "@/components/AccountHeader";
@@ -1186,7 +1187,7 @@ function SettingsPage() {
         <div style={{ display: "grid", gridTemplateColumns: "246px minmax(0,1fr)", gap: 40, marginTop: 34, alignItems: "start" }}>
           <div style={{ position: "sticky", top: 112, display: "flex", flexDirection: "column", gap: 2 }}>
             {TABS.map((t) => (
-              <div key={t.k} onClick={() => setTab(t.k)} className="row-hover-faint" style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 8, cursor: "pointer", background: tab === t.k ? "#FBF8F2" : "transparent" }}>
+              <div key={t.k} {...selectable(() => setTab(t.k), tab === t.k)} className="row-hover-faint" style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 8, cursor: "pointer", background: tab === t.k ? "#FBF8F2" : "transparent" }}>
                 <span style={{ width: 4, height: 4, borderRadius: "50%", background: tab === t.k ? "#E4622F" : "transparent", flex: "none" }} />
                 <span style={{ fontSize: 15, fontWeight: tab === t.k ? 600 : 500, letterSpacing: "-.018em", color: tab === t.k ? "#15140F" : "#5C574B", whiteSpace: "nowrap" }}>{t.name}</span>
               </div>

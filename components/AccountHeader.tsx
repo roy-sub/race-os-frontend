@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { clickable } from "@/lib/a11y";
 import { useCallback, useState, type ReactNode } from "react";
 import { Mark } from "./Mark";
 import { MediaPlaceholder } from "./MediaPlaceholder";
@@ -152,7 +153,7 @@ export function AccountHeader({ active, alerts = [], roleLabel, aside }: Account
               <div style={{ position: "absolute", top: 44, right: 0, width: 330, background: "#FBF8F2", border: "1px solid rgba(21,20,15,.1)", borderRadius: 10, boxShadow: "0 24px 60px -28px rgba(21,20,15,.4)", overflow: "hidden", zIndex: 90 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid rgba(21,20,15,.08)" }}>
                   <span className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#8C8578" }}>ALERTS</span>
-                  <span onClick={() => setAlertsOpen(false)} className="mono link-accent" style={{ fontSize: 14, color: "#A8A192", cursor: "pointer", lineHeight: 1 }}>×</span>
+                  <span {...clickable(() => setAlertsOpen(false))} className="mono link-accent" style={{ fontSize: 14, color: "#A8A192", cursor: "pointer", lineHeight: 1 }}>×</span>
                 </div>
                 {alerts.map((a) => (
                   <div key={a.title} className="row-hover-faint" style={{ display: "flex", gap: 12, padding: "16px 18px", borderBottom: "1px solid rgba(21,20,15,.06)", cursor: "pointer" }}>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { clickable } from "@/lib/a11y";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Mark } from "./Mark";
@@ -323,7 +324,7 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
               <h1 style={{ margin: "22px 0 0", fontSize: 40, lineHeight: 1.02, fontWeight: 600, letterSpacing: "-.045em" }}>Check your inbox.</h1>
               <p style={{ margin: "13px 0 0", fontSize: 16, lineHeight: 1.5, color: "#5C574B" }}>We sent a reset link to <span style={{ color: "#15140F", fontWeight: 500 }}>{email}</span>. It expires in one hour and can only be used once.</p>
               <div style={{ marginTop: 26, padding: "18px 20px", borderRadius: 10, background: "rgba(21,20,15,.045)", fontSize: 14, lineHeight: 1.55, color: "#5C574B" }}>
-                Nothing arrived? Check spam, then <span onClick={() => go("forgot")} style={{ color: "#C6461B", fontWeight: 500, cursor: "pointer" }}>send it again</span>. If the address has no account we still show this screen — we will not confirm who is registered.
+                Nothing arrived? Check spam, then <span {...clickable(() => go("forgot"))} style={{ color: "#C6461B", fontWeight: 500, cursor: "pointer" }}>send it again</span>. If the address has no account we still show this screen — we will not confirm who is registered.
               </div>
               <button type="button" onClick={() => go("login")} className="btn-outline-dark2" style={{ appearance: "none", width: "100%", fontFamily: "inherit", background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", height: 50, marginTop: 22, border: "1px solid rgba(21,20,15,.18)", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Back to log in</button>
             </form>
