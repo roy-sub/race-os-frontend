@@ -94,6 +94,38 @@ export function useCreateRace() {
   });
 }
 
+export type Forecast = components["schemas"]["ForecastOut"];
+
+/**
+ * The forecast for this race's start hour, **as it stands now**.
+ *
+ * Not the plan's `forecast_snapshot`. That one is frozen at solve time and
+ * stays frozen — a plan's numbers do not change under the athlete. This is the
+ * live reading to put beside it, so a plan solved against a forecast that has
+ * since moved eight degrees says so instead of looking current.
+ *
+ * `available: false` is a normal answer, not a failure: the race may be beyond
+ * the forecast horizon, or the provider may be down. Both arrive as a 200 with
+ * a reason, so this query only enters its error state for a real fault.
+ *
+ * Refetched no more often than the backend's own cache would answer from — a
+ * forecast that moves within five minutes is the provider being noisy, not the
+ * weather changing.
+ */
+export function useRaceForecast(raceId: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.races.forecast(raceId ?? ""),
+    enabled: Boolean(raceId),
+    staleTime: 5 * 60 * 1000,
+    queryFn: () =>
+      unwrap(
+        client.GET("/api/v1/races/{race_id}/forecast", {
+          params: { path: { race_id: raceId! } },
+        }),
+      ),
+  });
+}
+
 // --- plans -----------------------------------------------------------------
 
 export function usePlan(planId: string | null) {
@@ -253,18 +285,25 @@ export const ESTIMATORS: Partial<Record<ConstraintKey, EstimatorField[]>> = {
 };
 
 /**
- * The four sources, and nothing else.
+ * The five sources, and nothing else.
  *
- * There is no FILE, no CALIBRATED and no IMPORTED: `measured` comes only from
- * post-race calibration, so before a race the honest options are a number the
- * athlete trusts (`manual`), a number from a test (`tested`), or the
- * estimator (`estimated`).
+ * There is no FILE and no CALIBRATED: `measured` comes only from post-race
+ * calibration. Before a race the honest options are a number the athlete
+ * trusts (`manual`), a number from a test (`tested`), the estimator
+ * (`estimated`), or a figure brought in from a tool outside RaceOS
+ * (`imported`).
+ *
+ * `imported` is not a dressed-up `manual`. Manual means a person typed what
+ * they believe; imported means a named external tool produced it — a
+ * bike-split modeller, a lab report — and `source_detail` says which. They
+ * are defended differently, so they are badged differently.
  */
 export const SOURCE_LABELS: Record<ConstraintSource, string> = {
   measured: "MEASURED",
   tested: "TESTED",
   manual: "MANUAL",
   estimated: "ESTIMATED",
+  imported: "IMPORTED",
 };
 
 export const SOURCE_STYLE: Record<ConstraintSource, { bg: string; fg: string }> = {
@@ -272,6 +311,9 @@ export const SOURCE_STYLE: Record<ConstraintSource, { bg: string; fg: string }> 
   tested: { bg: "rgba(124,192,143,.16)", fg: "#3E7B55" },
   manual: { bg: "rgba(21,20,15,.07)", fg: "#5C574B" },
   estimated: { bg: "rgba(224,163,60,.18)", fg: "#A0701A" },
+  // Blue rather than green or amber: an imported figure is neither a
+  // measurement nor a guess, it is somebody else's model.
+  imported: { bg: "rgba(79,124,147,.15)", fg: "#3D6478" },
 };
 
 export function useConstraints() {

@@ -15,6 +15,7 @@
  * This screen renders `withheld_reason` rather than papering over it.
  */
 
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { Mark } from "@/components/Mark";
 import { Skeleton } from "@/components/Skeleton";
@@ -25,6 +26,14 @@ import { useAuth } from "@/lib/auth/AuthProvider";
 import { ApiError } from "@/lib/api/errors";
 import { formatDate } from "@/lib/api/account";
 import { useCoachBoard, type BoardRow } from "@/lib/api/screens";
+import {
+  LOGO_ACCEPT,
+  MAX_LOGO_BYTES,
+  useBranding,
+  useRemoveLogo,
+  useSaveBranding,
+  useUploadLogo,
+} from "@/lib/api/branding";
 import { feasStyle } from "@/lib/dashboard";
 import { marginState, MARGIN_COLOR } from "@/lib/myPlans";
 
@@ -120,6 +129,183 @@ function AthleteRow({ row }: { row: BoardRow }) {
   );
 }
 
+/**
+ * The coach's mark on the documents their athletes carry to a race.
+ *
+ * Small on purpose, and this panel offers exactly what the server does: a
+ * display name, one accent colour, a logo and one footer line. There is no
+ * layout control and no way to replace the provenance footer — a coach's note
+ * is appended after the house one, never instead of it, because every number
+ * on the page has to keep saying where it came from.
+ *
+ * The accent is validated server-side for contrast against the paper colour
+ * the PDF actually uses. A colour that fails comes back with the measured
+ * ratio in the error, which is more use than "invalid", so that error is
+ * shown as-is rather than replaced with a friendlier sentence that says less.
+ */
+function BrandingPanel() {
+  const branding = useBranding();
+  const save = useSaveBranding();
+  const upload = useUploadLogo();
+  const removeLogo = useRemoveLogo();
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const [tooBig, setTooBig] = useState(false);
+
+  const [name, setName] = useState<string | null>(null);
+  const [accent, setAccent] = useState<string | null>(null);
+  const [footer, setFooter] = useState<string | null>(null);
+
+  // Null means "not edited yet", so the server's value shows until the coach
+  // types. Seeding state from data in an effect would fight every refetch.
+  const nameValue = name ?? branding.data?.display_name ?? "";
+  const accentValue = accent ?? branding.data?.accent_hex ?? "";
+  const footerValue = footer ?? branding.data?.footer_note ?? "";
+
+  if (branding.error instanceof ApiError && branding.error.code === "PAYMENT_REQUIRED") {
+    return null; // The upgrade prompt above already says this.
+  }
+
+  function pick(file: File | undefined) {
+    if (!file) return;
+    // Checked here only so the coach is told before the upload rather than
+    // after it. The server sniffs the bytes and decides.
+    if (file.size > MAX_LOGO_BYTES) {
+      setTooBig(true);
+      return;
+    }
+    setTooBig(false);
+    upload.mutate(file);
+  }
+
+  return (
+    <div style={{ ...CARD, padding: "26px 30px", marginTop: 24 }}>
+      <div className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#8C8578" }}>
+        YOUR MARK ON EXPORTS
+      </div>
+      <p style={{ margin: "12px 0 0", maxWidth: 700, fontSize: 14.5, lineHeight: 1.6, color: "#5C574B" }}>
+        A name, one colour and a logo on the race card and bag list your athletes carry. The
+        layout, the splits ladder and the line saying where every number came from stay exactly
+        as they are — a document that reorganises itself per coach is one nobody can read at
+        five in the morning.
+      </p>
+
+      {branding.error ? (
+        <div style={{ marginTop: 18 }}>
+          <ApiErrorState error={branding.error} onRetry={() => void branding.refetch()} />
+        </div>
+      ) : branding.isPending ? (
+        <div style={{ marginTop: 18 }}><Skeleton width="100%" height={96} /></div>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 150px", gap: 14, marginTop: 20 }}>
+            <label>
+              <span className="mono" style={{ display: "block", fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>DISPLAY NAME</span>
+              <input
+                value={nameValue}
+                onChange={(event) => setName(event.target.value)}
+                onBlur={() => name !== null && save.mutate({ display_name: name || null })}
+                maxLength={60}
+                placeholder="How you are credited"
+                style={{ width: "100%", height: 40, padding: "0 12px", marginTop: 8, borderRadius: 7, border: "1px solid rgba(21,20,15,.16)", background: "#fff", fontSize: 14 }}
+              />
+            </label>
+            <label>
+              <span className="mono" style={{ display: "block", fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>ACCENT</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                <input
+                  value={accentValue}
+                  onChange={(event) => setAccent(event.target.value)}
+                  onBlur={() =>
+                    accent !== null &&
+                    save.mutate(
+                      accent ? { accent_hex: accent } : { accent_hex: null, clear_accent: true },
+                    )
+                  }
+                  maxLength={7}
+                  placeholder="#C6461B"
+                  style={{ flex: 1, minWidth: 0, height: 40, padding: "0 12px", borderRadius: 7, border: "1px solid rgba(21,20,15,.16)", background: "#fff", fontSize: 14 }}
+                />
+                <span
+                  aria-hidden="true"
+                  style={{ width: 32, height: 32, borderRadius: 6, flex: "none", border: "1px solid rgba(21,20,15,.12)", background: branding.data.effective_accent_hex || "#E4622F" }}
+                />
+              </span>
+            </label>
+          </div>
+
+          <label style={{ display: "block", marginTop: 14 }}>
+            <span className="mono" style={{ display: "block", fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>
+              FOOTER LINE — ADDED AFTER OURS, NOT INSTEAD OF IT
+            </span>
+            <input
+              value={footerValue}
+              onChange={(event) => setFooter(event.target.value)}
+              onBlur={() => footer !== null && save.mutate({ footer_note: footer || null })}
+              maxLength={120}
+              placeholder="Coached by …"
+              style={{ width: "100%", height: 40, padding: "0 12px", marginTop: 8, borderRadius: 7, border: "1px solid rgba(21,20,15,.16)", background: "#fff", fontSize: 14 }}
+            />
+          </label>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 18 }}>
+            <input
+              ref={fileInput}
+              type="file"
+              accept={LOGO_ACCEPT}
+              className="sr-only"
+              onChange={(event) => pick(event.target.files?.[0])}
+            />
+            <button
+              type="button"
+              onClick={() => fileInput.current?.click()}
+              disabled={upload.isPending}
+              style={{ height: 38, padding: "0 16px", borderRadius: 7, border: "1px solid rgba(21,20,15,.18)", background: "transparent", fontSize: 14, fontWeight: 500, cursor: "pointer" }}
+            >
+              {upload.isPending
+                ? "Uploading…"
+                : branding.data.has_logo
+                  ? "Replace logo"
+                  : "Add a logo"}
+            </button>
+            {branding.data.has_logo && (
+              <button
+                type="button"
+                onClick={() => removeLogo.mutate()}
+                disabled={removeLogo.isPending}
+                className="mono"
+                style={{ background: "none", border: "none", fontSize: 9.5, letterSpacing: ".12em", color: "#C6461B", cursor: "pointer" }}
+              >
+                {removeLogo.isPending ? "REMOVING…" : "REMOVE"}
+              </button>
+            )}
+            <span className="mono" style={{ fontSize: 8.5, letterSpacing: ".12em", color: "#B8B1A2" }}>
+              PNG · JPEG · WEBP · UP TO 512 KB
+            </span>
+          </div>
+
+          {tooBig && (
+            <p style={{ margin: "12px 0 0", fontSize: 13.5, lineHeight: 1.55, color: "#C0392B" }}>
+              That file is over 512 KB. A logo on a race card is printed a couple of centimetres
+              wide — a smaller export will look identical.
+            </p>
+          )}
+
+          {(save.error || upload.error || removeLogo.error) && (
+            <div style={{ marginTop: 16 }}>
+              <ApiErrorState error={save.error ?? upload.error ?? removeLogo.error} />
+            </div>
+          )}
+
+          <p style={{ margin: "18px 0 0", maxWidth: 700, fontSize: 13.5, lineHeight: 1.6, color: "#6B6455" }}>
+            Branding is off by default on every download and switched on per export. SVG is not
+            accepted: it can carry script, and these files are rendered on our own server.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function CoachPage() {
   const { user } = useAuth();
   const { data, isPending, error, refetch } = useCoachBoard();
@@ -200,6 +386,8 @@ function CoachPage() {
             </div>
           )}
         </div>
+
+        {!needsUpgrade && <BrandingPanel />}
 
         <div style={{ ...CARD, padding: "26px 30px", marginTop: 24 }}>
           <div className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#8C8578" }}>WHAT A COACH CANNOT DO</div>

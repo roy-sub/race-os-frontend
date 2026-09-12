@@ -20,6 +20,7 @@ export const routes = {
   notifications: "/notifications",
   coach: "/coach",
   admin: "/admin",
+  adminAccounts: "/admin/accounts",
   guide: "/guide",
   sharedPlan: "/shared",
 } as const;

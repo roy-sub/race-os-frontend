@@ -7,7 +7,7 @@
  * follows without a release.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { client, unwrap } from "./client";
 import { queryKeys } from "./queryKeys";
 import type { components } from "./schema";
@@ -16,6 +16,7 @@ export type Entitlement = components["schemas"]["EntitlementOut"];
 export type Price = components["schemas"]["PriceOut"];
 export type UserTier = components["schemas"]["UserTier"];
 export type Currency = components["schemas"]["Currency"];
+export type Subscription = components["schemas"]["SubscriptionOut"];
 
 export function usePrices() {
   return useQuery({
@@ -62,4 +63,90 @@ export function priceFor(
     prices?.find((p) => p.tier === tier && p.currency === currency) ??
     prices?.find((p) => p.tier === tier)
   );
+}
+
+
+// --- subscriptions ---------------------------------------------------------
+
+/**
+ * Every agreement this account has had, newest first.
+ *
+ * Cancelled ones are included deliberately: a past subscription is history the
+ * billing page has to be able to show, and hiding it would make an athlete
+ * who cancelled last month look like one who never subscribed.
+ */
+export function useSubscriptions() {
+  return useQuery({
+    queryKey: queryKeys.billing.subscriptions(),
+    queryFn: () => unwrap(client.GET("/api/v1/subscriptions")),
+  });
+}
+
+/** The live one, if there is one. */
+export function activeSubscription(rows: Subscription[] | undefined): Subscription | undefined {
+  return rows?.find((row) => row.status === "active" || row.status === "past_due");
+}
+
+/**
+ * Buy a season pass or a coach seat.
+ *
+ * Not the two-phase flow a race plan uses. A plan is authorised and only
+ * charged once the solve succeeds, because the athlete might not get what they
+ * paid for; a subscription is to a service that is available the moment it
+ * starts. `client_secret` comes back when the provider needs a card confirmed
+ * first, and is absent — successfully — for a returning customer.
+ *
+ * Invalidates entitlements as well as subscriptions: what this purchase is
+ * *for* is the actions it unlocks, and the screen has to show them unlocked.
+ */
+export function useSubscribe() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (tier: UserTier) =>
+      unwrap(client.POST("/api/v1/subscriptions", { body: { tier } })),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.billing.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
+    },
+  });
+}
+
+/**
+ * Stop renewing. **Nothing already paid for is taken away.**
+ *
+ * The agreement stays active until the period the athlete has paid for ends,
+ * and every race they were charged for stays theirs permanently regardless —
+ * that one is a purchase, not a subscription.
+ */
+export function useCancelSubscription() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (subscriptionId: string) =>
+      unwrap(
+        client.POST("/api/v1/subscriptions/{subscription_id}/cancel", {
+          params: { path: { subscription_id: subscriptionId } },
+        }),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.billing.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
+    },
+  });
+}
+
+/** Undo a cancellation that has not taken effect yet. */
+export function useResumeSubscription() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (subscriptionId: string) =>
+      unwrap(
+        client.POST("/api/v1/subscriptions/{subscription_id}/resume", {
+          params: { path: { subscription_id: subscriptionId } },
+        }),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.billing.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
+    },
+  });
 }

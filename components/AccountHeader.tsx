@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Mark } from "./Mark";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { routes } from "@/lib/routes";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { Skeleton } from "./Skeleton";
+import { CommandPalette, usePaletteShortcut } from "./CommandPalette";
 
 const NAV = [
   { href: routes.courseRecon, label: "Course recon", key: "courseRecon" },
@@ -60,7 +61,14 @@ const TIER_LABEL: Record<string, string> = {
 export function AccountHeader({ active, alerts = [], roleLabel, aside }: AccountHeaderProps) {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const { user, status, signOut } = useAuth();
+
+  // Listening from the header rather than from inside the palette: the palette
+  // is not mounted until it opens, so something has to be listening while it
+  // is closed.
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
+  usePaletteShortcut(openPalette);
 
   // An account with no display name is normal — `name` is optional at signup —
   // so the email is the fallback rather than an invented placeholder.
@@ -87,18 +95,27 @@ export function AccountHeader({ active, alerts = [], roleLabel, aside }: Account
         </nav>
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
           {aside}
-          <div style={{ display: "flex", alignItems: "center", gap: 9, height: 34, padding: "0 12px", border: "1px solid rgba(21,20,15,.14)", borderRadius: 6, width: 196, background: "rgba(255,255,255,.5)" }}>
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flex: "none" }}>
+          {/* A button, not an input. It used to be a text field wired to
+              nothing — a box inviting a query the product could not answer,
+              and one a keyboard user could tab into and type a whole sentence
+              in for no result. It opens the palette, which is where the
+              typing actually happens. */}
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            aria-haspopup="dialog"
+            aria-label="Search races, plans, courses and help. Shortcut: Command K"
+            style={{ display: "flex", alignItems: "center", gap: 9, height: 34, padding: "0 12px", border: "1px solid rgba(21,20,15,.14)", borderRadius: 6, width: 196, background: "rgba(255,255,255,.5)", cursor: "pointer", textAlign: "left" }}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ flex: "none" }}>
               <circle cx="7" cy="7" r="4.6" stroke="#8C8578" strokeWidth="1.5" />
               <path d="M10.6 10.6 14 14" stroke="#8C8578" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
-            <input
-              type="text"
-              placeholder="Search races, bags, cut-offs"
-              style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", fontFamily: "Switzer,Helvetica,Arial,sans-serif", fontSize: 12.5, color: "#15140F", padding: 0 }}
-            />
-            <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".08em", color: "#A8A192", flex: "none" }}>⌘K</span>
-          </div>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "#8C8578", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              Search
+            </span>
+            <kbd className="mono" style={{ fontSize: 9.5, letterSpacing: ".08em", color: "#A8A192", flex: "none" }}>⌘K</kbd>
+          </button>
           <div style={{ position: "relative" }}>
             <div
               onClick={() => setAlertsOpen((o) => !o)}
@@ -178,6 +195,8 @@ export function AccountHeader({ active, alerts = [], roleLabel, aside }: Account
           </div>
         </div>
       </div>
+
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
     </header>
   );
 }

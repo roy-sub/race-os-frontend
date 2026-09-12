@@ -567,6 +567,64 @@
           }
         }
       },
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Delete this account (GDPR erasure)",
+        "description": "**Irreversible, and only ever by the person who holds the account.**\n\nNot a hard delete. Invoices are financial records with statutory\nretention, plans a coach built are that coach's work too, and the audit\nlog has to stay referentially intact — so the row survives as a tombstone\nwith an id, a state and a timestamp, and every field that identifies a\nperson is scrubbed. Enough for an invoice to point somewhere; not enough\nto say who it was.\n\nEvery session is revoked and every token issued before now stops\nverifying, so an access token still sitting in another tab dies with the\naccount rather than outliving it. The response is the last thing this\naccount will ever receive.",
+        "operationId": "erase_me_api_v1_auth_me_delete",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErasureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureImpactOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "tags": [
           "auth"
@@ -626,13 +684,63 @@
         }
       }
     },
+    "/api/v1/auth/me/erasure-impact": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "What deleting this account would destroy",
+        "description": "Read before the delete, so the confirmation states facts.\n\n\"4 plans and 2 invoices\" is a different decision from \"0 and 0\", and a\ngeneric warning makes both look the same.",
+        "operationId": "erasure_impact_api_v1_auth_me_erasure_impact_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureImpactOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/courses": {
       "get": {
         "tags": [
           "courses"
         ],
         "summary": "Race directory",
-        "description": "Public, and *narrower* when signed in rather than wider.\n\nA signed-out visitor sees the marketing showcase alongside the season; a\nsigned-in athlete sees the season and their own submitted courses, and not\nthe showcase \u2014 see ``course_service.visible_to`` for why.",
+        "description": "Public, and *narrower* when signed in rather than wider.\n\nA signed-out visitor sees the marketing showcase alongside the season; a\nsigned-in athlete sees the season and their own submitted courses, and not\nthe showcase — see ``course_service.visible_to`` for why.",
         "operationId": "list_courses_api_v1_courses_get",
         "parameters": [
           {
@@ -835,6 +943,65 @@
         }
       }
     },
+    "/api/v1/courses/{course_ref}/conditions-history": {
+      "get": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "What race day has actually been like",
+        "description": "Public, like the rest of recon. **Observed, never modelled.**\n\nEvery figure is reanalysis from the weather archive for this course's own\ncoordinates, at the race's own start hour, on the day the race was held.\nWhere a value is unavailable it is absent: a lake course has no\nsea-surface temperature, so it has no water temperature and therefore no\nwetsuit likelihood, rather than one inferred from the air.\n\nThere is no finish-time distribution. It needs actual results, which this\nsystem does not have and cannot obtain, and the prototype's was drawn.",
+        "operationId": "get_conditions_history_api_v1_courses__course_ref__conditions_history_get",
+        "parameters": [
+          {
+            "name": "course_ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Ref"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConditionsHistoryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/courses/{course_ref}/bundle/history": {
       "get": {
         "tags": [
@@ -887,7 +1054,7 @@
           "courses"
         ],
         "summary": "Everything the recon page shows",
-        "description": "Public, with the map itself gated.\n\nWhat a race is chosen on \u2014 where, how far, how much climbing, the tightest\ncut-off \u2014 is free to everyone including signed-out visitors, because a\ndirectory nobody can evaluate is not a front door. The surveyed geometry\nand the furniture around it are part of the race plan, and arrive with\n``access.map_unlocked`` false and a reason rather than silently missing.",
+        "description": "Public, with the map itself gated.\n\nWhat a race is chosen on — where, how far, how much climbing, the tightest\ncut-off — is free to everyone including signed-out visitors, because a\ndirectory nobody can evaluate is not a front door. The surveyed geometry\nand the furniture around it are part of the race plan, and arrive with\n``access.map_unlocked`` false and a reason rather than silently missing.",
         "operationId": "get_recon_api_v1_courses__course_ref__recon_get",
         "parameters": [
           {
@@ -947,7 +1114,7 @@
           "courses"
         ],
         "summary": "The 3D map's terrain field",
-        "description": "Everything the 3D course map needs, already in slab coordinates.\n\nThe browser does no geography: it receives a height grid, a water mask, a\ndistance-to-shore field and three route lines, all projected, scaled and\ndraped here. See :mod:`raceos.services.terrain_service` \u2014 and\n``course-map-3d/TRACKS.md`` \u00a75-6, which is the specification this\nimplements.\n\nBehind the same gate as the rest of the map. The showcase course is open\nto everyone, because a marketing map nobody can see advertises nothing.",
+        "description": "Everything the 3D course map needs, already in slab coordinates.\n\nThe browser does no geography: it receives a height grid, a water mask, a\ndistance-to-shore field and three route lines, all projected, scaled and\ndraped here. See :mod:`raceos.services.terrain_service` — and\n``course-map-3d/TRACKS.md`` §5-6, which is the specification this\nimplements.\n\nBehind the same gate as the rest of the map. The showcase course is open\nto everyone, because a marketing map nobody can see advertises nothing.",
         "operationId": "get_terrain_api_v1_courses__course_ref__terrain_get",
         "parameters": [
           {
@@ -1007,7 +1174,7 @@
           "courses"
         ],
         "summary": "The free cut-off calculator",
-        "description": "\"If I finish in this time, which cut-offs am I near?\"\n\nA straight-line estimate from the published limits, not a solve \u2014 and it\nsays so in every row. It answers the question someone deciding whether to\nenter is actually asking, without an account.",
+        "description": "\"If I finish in this time, which cut-offs am I near?\"\n\nA straight-line estimate from the published limits, not a solve — and it\nsays so in every row. It answers the question someone deciding whether to\nenter is actually asking, without an account.",
         "operationId": "cutoff_check_api_v1_courses__course_ref__cutoff_check_post",
         "parameters": [
           {
@@ -1428,7 +1595,7 @@
           "course submissions"
         ],
         "summary": "Build the course",
-        "description": "Run the ingest: resample, sample terrain, segment, and load.\n\nReturns ``200`` whether the build succeeded or failed \u2014 a submission that\nwas rejected is a *state of the submission*, with its reasons attached,\nnot a failed request. The athlete's files are still there and replacing one\nand re-submitting is the recovery path.",
+        "description": "Run the ingest: resample, sample terrain, segment, and load.\n\nReturns ``200`` whether the build succeeded or failed — a submission that\nwas rejected is a *state of the submission*, with its reasons attached,\nnot a failed request. The athlete's files are still there and replacing one\nand re-submitting is the recovery path.",
         "operationId": "submit_api_v1_course_submissions__submission_id__submit_post",
         "parameters": [
           {
@@ -1482,12 +1649,233 @@
         }
       }
     },
+    "/api/v1/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search races, plans, courses and help",
+        "description": "Public, and scoped to the asker.\n\nA signed-out visitor gets courses and help; a signed-in athlete also gets\ntheir own races and plans, filtered by owner in SQL rather than after the\nfact. Courses reuse the directory's own visibility filter, so a search\ncannot surface a row the directory would not list.\n\nA query under two characters returns nothing rather than most of the\nlibrary: it is almost always a keystroke on the way to a real one.",
+        "operationId": "search_api_v1_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "At least two characters",
+              "default": "",
+              "title": "Q"
+            },
+            "description": "At least two characters"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SearchHitOut"
+                  },
+                  "title": "Response Search Api V1 Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/help": {
+      "get": {
+        "tags": [
+          "help"
+        ],
+        "summary": "Every help article",
+        "description": "Grouped by category in reading order, not alphabetically.\n\n\"Getting started\" before \"Billing\" is the whole point of having an order.",
+        "operationId": "list_articles_api_v1_help_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Match title, summary and body",
+              "title": "Q"
+            },
+            "description": "Match title, summary and body"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One of the published categories",
+              "title": "Category"
+            },
+            "description": "One of the published categories"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HelpArticleSummary"
+                  },
+                  "title": "Response List Articles Api V1 Help Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/help/categories": {
+      "get": {
+        "tags": [
+          "help"
+        ],
+        "summary": "The published categories, in reading order",
+        "operationId": "list_categories_api_v1_help_categories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "title": "Response List Categories Api V1 Help Categories Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/help/{slug}": {
+      "get": {
+        "tags": [
+          "help"
+        ],
+        "summary": "One article in full",
+        "operationId": "get_article_api_v1_help__slug__get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelpArticleOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/constraints": {
       "get": {
         "tags": [
           "constraints"
         ],
         "summary": "Current values with provenance",
+        "description": "Staleness rides on each row's ``stale`` flag, not in a warnings array.\n\nThis response is a list, so there is no top-level object for a caveat to\nsit in — and a per-row flag is the better surface anyway, because the\nscreen rendering it puts the warning beside the value it is about rather\nthan in a banner the reader has to match up by hand. The ``warnings``\narray is for responses where the athlete cannot see which input is at\nfault: a solved plan carries it (see ``GET /plans/{id}``), a table of the\ninputs themselves does not need it.",
         "operationId": "list_constraints_api_v1_constraints_get",
         "parameters": [
           {
@@ -1675,7 +2063,7 @@
           "constraints"
         ],
         "summary": "Estimate a constraint from two questions",
-        "description": "Produces a value stamped ``estimated`` and writes it.\n\nAn estimated value carries **full numeric weight** in the solver (\u00a70.6).\nThe estimator's job is to produce the athlete's real number as well as two\nquestions can, not to produce a cautious one.",
+        "description": "Produces a value stamped ``estimated`` and writes it.\n\nAn estimated value carries **full numeric weight** in the solver (§0.6).\nThe estimator's job is to produce the athlete's real number as well as two\nquestions can, not to produce a cautious one.",
         "operationId": "estimate_api_v1_constraints__key__estimate_post",
         "parameters": [
           {
@@ -2603,7 +2991,7 @@
           "races"
         ],
         "summary": "Correct a date, time or bib",
-        "description": "Editing the date does **not** re-solve anything.\n\nAn existing plan keeps its numbers until the athlete asks for a re-solve \u2014\nsilently recomputing behind them is the thing Law 3 forbids.",
+        "description": "Editing the date does **not** re-solve anything.\n\nAn existing plan keeps its numbers until the athlete asks for a re-solve —\nsilently recomputing behind them is the thing Law 3 forbids.",
         "operationId": "update_race_api_v1_races__race_id__patch",
         "parameters": [
           {
@@ -2718,13 +3106,323 @@
         }
       }
     },
+    "/api/v1/races/{race_id}/forecast": {
+      "get": {
+        "tags": [
+          "races"
+        ],
+        "summary": "The live forecast for this race's start hour",
+        "description": "The forecast as it stands **now**, beside the one the plan was solved on.\n\nA solved plan freezes its ``forecast_snapshot`` and keeps it frozen — Law 3\nsays a plan's numbers do not change under the athlete. That is the right\nbehaviour and it leaves a gap: nothing showed what the weather is actually\ndoing, so an athlete could not see that the plan they are holding was\nsolved against a forecast that has since moved eight degrees. This closes\nit without touching the plan.\n\nNever 4xx for an absent forecast. \"No forecast\" is an ordinary state with\nthree ordinary causes, each of which wants different words on the screen,\nand a 404 here would say the race does not exist.\n\nThe response commits because ``fetch_forecast`` writes the provider's reply\ninto the TTL cache. That is a read-through cache doing its job on a GET,\nnot a mutation: dropping the write would re-fetch on every render.",
+        "operationId": "get_race_forecast_api_v1_races__race_id__forecast_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForecastOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/races/{race_id}/race-week": {
+      "get": {
+        "tags": [
+          "races"
+        ],
+        "summary": "The race-week checklist",
+        "description": "Dated, checkable tasks. **Generated on read, idempotently.**\n\nThe ICS export has always derived the right dates from the event date — a\nTuesday race gets a Saturday check-in — but a calendar event cannot be\nticked off and nothing was stored, so \"have I handed in the special-needs\nbag?\" had no answer. Both now come from one derivation, so the calendar\nand the checklist cannot disagree about the same week.\n\nGenerating here rather than in a job means a race entered five minutes ago\nhas a checklist, instead of waiting for a cron that may not run before race\nweek.",
+        "operationId": "get_race_week_api_v1_races__race_id__race_week_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaceWeekOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/races/{race_id}/race-week/tasks": {
+      "post": {
+        "tags": [
+          "races"
+        ],
+        "summary": "Add your own race-week task",
+        "description": "Sits beside the derived ones, in date order. To the athlete it is one\nlist, so it is one list.",
+        "operationId": "add_race_week_task_api_v1_races__race_id__race_week_tasks_post",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RaceWeekTaskCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaceWeekTaskOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/races/race-week/tasks/{task_id}": {
+      "patch": {
+        "tags": [
+          "races"
+        ],
+        "summary": "Tick a task off, or un-tick it",
+        "operationId": "set_race_week_task_api_v1_races_race_week_tasks__task_id__patch",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RaceWeekTaskPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaceWeekTaskOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "races"
+        ],
+        "summary": "Remove a task you added",
+        "description": "Yours only. A derived task is part of the race rather than a note, and\nremoving \"bike check-in\" because it is inconvenient is not something the\nchecklist should help with — ticking it off is.",
+        "operationId": "delete_race_week_task_api_v1_races_race_week_tasks__task_id__delete",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/plans/{plan_id}/export": {
       "get": {
         "tags": [
           "exports"
         ],
         "summary": "What this plan can be exported as",
-        "description": "The manifest the download drawer renders.\n\nIt also carries the head-unit import instructions, because writing the\nfile is only half of the promise \u2014 the athlete still has to get it onto\nthe device, and RaceOS has no integration that could do it for them.",
+        "description": "The manifest the download drawer renders.\n\nIt also carries the head-unit import instructions, because writing the\nfile is only half of the promise — the athlete still has to get it onto\nthe device, and RaceOS has no integration that could do it for them.",
         "operationId": "list_exports_api_v1_plans__plan_id__export_get",
         "parameters": [
           {
@@ -2785,6 +3483,7 @@
           "exports"
         ],
         "summary": "The race card, as a printable A5 page",
+        "description": "**Unbranded by default, deliberately.**\n\nA branded artefact is something a coach hands over on purpose. An athlete\ndownloading their own race card gets the house document unless somebody\nchose otherwise — and the choice is checked against the coach's\nentitlement rather than taken on trust from a query parameter.",
         "operationId": "export_race_card_api_v1_plans__plan_id__export_race_card_pdf_get",
         "parameters": [
           {
@@ -2796,6 +3495,18 @@
               "format": "uuid",
               "title": "Plan Id"
             }
+          },
+          {
+            "name": "branded",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Render with the coach's branding, where this plan was built by one who has set any. Requires the coach tier.",
+              "default": false,
+              "title": "Branded"
+            },
+            "description": "Render with the coach's branding, where this plan was built by one who has set any. Requires the coach tier."
           },
           {
             "name": "authorization",
@@ -2848,6 +3559,18 @@
               "format": "uuid",
               "title": "Plan Id"
             }
+          },
+          {
+            "name": "branded",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Render with the coach's branding, as above.",
+              "default": false,
+              "title": "Branded"
+            },
+            "description": "Render with the coach's branding, as above."
           },
           {
             "name": "authorization",
@@ -3296,6 +4019,254 @@
         }
       }
     },
+    "/api/v1/subscriptions": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Buy a season pass or a coach seat",
+        "description": "The two recurring tiers, which until now could only be inserted by hand.\n\n**Not two-phase, unlike a race plan.** A plan is authorized and captured\nonly if the solve succeeds, because the athlete might not get what they\npaid for. A season pass is a subscription to a service that is available\nthe moment it starts, so there is nothing to hold money against.\n\n**The row takes whatever status the provider reports, and nothing else.**\nAgainst Stripe that means a new agreement opens ``incomplete`` — stored as\nPAST_DUE — until the first payment confirms, because entitlements must not\nfollow from a card that has not cleared. What activates it is the\nprovider's own webhook, the same path that already reconciles every other\npayment state; the client confirms the card with the returned\n``client_secret`` first. The in-memory gateway has no card to confirm, so\na subscription it opens is live immediately, which is what makes a local\nrun and the whole test suite work without credentials.\n\nAn athlete who already subscribes is *moved* to the new tier rather than\nsold a second agreement.",
+        "operationId": "subscribe_api_v1_subscriptions_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "This user's subscriptions",
+        "description": "Newest first, cancelled ones included — a past agreement is history the\nbilling page has to be able to show.",
+        "operationId": "list_subscriptions_api_v1_subscriptions_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SubscriptionOut"
+                  },
+                  "title": "Response List Subscriptions Api V1 Subscriptions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/{subscription_id}/cancel": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Stop renewing",
+        "description": "Ends at the period boundary. **Nothing already paid for is taken back.**\n\nNot a courtesy — it is what was bought. The athlete has paid for the period\nthey are in, and every race they captured a payment for stays theirs\npermanently regardless, because that is a purchase rather than a\nsubscription.",
+        "operationId": "cancel_subscription_api_v1_subscriptions__subscription_id__cancel_post",
+        "parameters": [
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Subscription Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/{subscription_id}/resume": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Undo a pending cancellation",
+        "description": "Only before it takes effect. Once the period has ended there is nothing\nto resume and the athlete subscribes again.",
+        "operationId": "resume_subscription_api_v1_subscriptions__subscription_id__resume_post",
+        "parameters": [
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Subscription Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/invoices": {
       "get": {
         "tags": [
@@ -3414,7 +4385,7 @@
           "billing"
         ],
         "summary": "Payment provider callbacks",
-        "description": "Unauthenticated by design \u2014 **the signature is the authentication.**\n\nAn unverified webhook is an attacker asserting that a payment succeeded,\nso a bad signature is a 422 and nothing is read from the body before the\nsignature has verified against the raw bytes.",
+        "description": "Unauthenticated by design — **the signature is the authentication.**\n\nAn unverified webhook is an attacker asserting that a payment succeeded,\nso a bad signature is a 422 and nothing is read from the body before the\nsignature has verified against the raw bytes.",
         "operationId": "payment_webhook_webhooks_payments_post",
         "parameters": [
           {
@@ -3543,6 +4514,75 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MyPlansOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/season-history": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "A season at a glance, and constraint drift across it",
+        "description": "The Season Pass view. **Gated on the tier that is sold with it.**\n\nTwo things, and the second is the one that did not exist anywhere:\nconstraint history was per key (`GET /constraints/{key}/history`), which\nanswers \"how has my FTP moved?\" and cannot answer \"what changed about me\nlast year?\" — the question the tier is sold on. Assembling that from eight\nseparate requests is something a client should not have to do.\n\nSeasons are grouped from October rather than January, so a race in the new\nyear sits with the autumn that prepared it.",
+        "operationId": "get_season_history_api_v1_season_history_get",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only constraint changes from this date onward",
+              "title": "Since"
+            },
+            "description": "Only constraint changes from this date onward"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonHistoryOut"
                 }
               }
             }
@@ -3799,7 +4839,7 @@
           "dashboard"
         ],
         "summary": "The full channel matrix",
-        "description": "Every type, always \u2014 an absent row would be ambiguous.",
+        "description": "Every type, always — an absent row would be ambiguous.",
         "operationId": "get_preferences_api_v1_notification_preferences_get",
         "parameters": [
           {
@@ -4164,7 +5204,7 @@
           "drift"
         ],
         "summary": "Shadow-recompute against today",
-        "description": "Runs the real solver on a throwaway input. **Writes no plan changes.**\n\nEstimating what a 3.4 \u00b0C forecast move would do to a bike target is\nexactly the shortcut that tells an athlete the wrong number, so this pays\nfor a full solve rather than approximating one.",
+        "description": "Runs the real solver on a throwaway input. **Writes no plan changes.**\n\nEstimating what a 3.4 °C forecast move would do to a bike target is\nexactly the shortcut that tells an athlete the wrong number, so this pays\nfor a full solve rather than approximating one.",
         "operationId": "check_drift_api_v1_plans__plan_id__drift_check_post",
         "parameters": [
           {
@@ -4344,7 +5384,7 @@
           "admin"
         ],
         "summary": "What publishing would touch",
-        "description": "Read-only, and it answers even inside the freeze window.\n\nAn operator asking \"how bad is this?\" during a freeze should get the\nnumber, not an error \u2014 the refusal belongs on the publish, not the\nquestion.",
+        "description": "Read-only, and it answers even inside the freeze window.\n\nAn operator asking \"how bad is this?\" during a freeze should get the\nnumber, not an error — the refusal belongs on the publish, not the\nquestion.",
         "operationId": "get_blast_radius_api_v1_admin_bundles__bundle_id__blast_radius_get",
         "parameters": [
           {
@@ -4474,7 +5514,7 @@
           "post-race"
         ],
         "summary": "Upload a race file",
-        "description": "Parsed on the way in so a bad file is refused with a specific reason.\n\nThe bytes are stored before analysis so a file we cannot read today is\nstill there when the parser improves \u2014 the athlete does not have to find\nit again.",
+        "description": "Parsed on the way in so a bad file is refused with a specific reason.\n\nThe bytes are stored before analysis so a file we cannot read today is\nstill there when the parser improves — the athlete does not have to find\nit again.",
         "operationId": "upload_file_api_v1_post_race_files_post",
         "parameters": [
           {
@@ -4703,7 +5743,7 @@
           "post-race"
         ],
         "summary": "Write the derived value into your constraints",
-        "description": "The one path that writes ``source = 'measured'``.\n\nIt goes through the constraint write guard, which requires the actor to\n**be** the athlete \u2014 so this cannot be applied on someone's behalf.",
+        "description": "The one path that writes ``source = 'measured'``.\n\nIt goes through the constraint write guard, which requires the actor to\n**be** the athlete — so this cannot be applied on someone's behalf.",
         "operationId": "apply_calibration_api_v1_post_race_calibrations__calibration_id__apply_post",
         "parameters": [
           {
@@ -4799,6 +5839,261 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CalibrationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/coach/branding": {
+      "get": {
+        "tags": [
+          "coach"
+        ],
+        "summary": "My branding",
+        "operationId": "get_branding_api_v1_coach_branding_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "coach"
+        ],
+        "summary": "Set a display name, accent or footer line",
+        "description": "**One colour, not a theme.**\n\nThe accent replaces a single value and is refused if it would not survive\nprinting: the race card is read in a transition tent, often through a wet\nsleeve and often after somebody photocopied it, and the person holding an\nunreadable one cannot fix it. The layout, the typography and every\nsafeguard in the artefact are fixed.",
+        "operationId": "update_branding_api_v1_coach_branding_patch",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandingUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/coach/branding/logo": {
+      "put": {
+        "tags": [
+          "coach"
+        ],
+        "summary": "Upload a logo",
+        "description": "PNG, JPEG or WebP, and the bytes are checked against what they claim.\n\nNo SVG: it is a document format carrying script and external references,\nand this file is rendered into a PDF on our own server.",
+        "operationId": "upload_branding_logo_api_v1_coach_branding_logo_put",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_branding_logo_api_v1_coach_branding_logo_put"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "coach"
+        ],
+        "summary": "The stored logo",
+        "description": "Served from its own endpoint rather than inlined on the settings read.\n\nA base64 blob on every read would be most of the payload, for an image the\nscreen shows once.",
+        "operationId": "get_branding_logo_api_v1_coach_branding_logo_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "coach"
+        ],
+        "summary": "Remove the logo",
+        "operationId": "delete_branding_logo_api_v1_coach_branding_logo_delete",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingOut"
                 }
               }
             }
@@ -5236,7 +6531,7 @@
           "coach"
         ],
         "summary": "Race-week board across linked athletes",
-        "description": "Coach tier only.\n\nAn athlete who has not granted plan access still appears, with their\nnumbers withheld and a reason \u2014 hiding them would make a coach think the\ninvite failed.",
+        "description": "Coach tier only.\n\nAn athlete who has not granted plan access still appears, with their\nnumbers withheld and a reason — hiding them would make a coach think the\ninvite failed.",
         "operationId": "get_board_api_v1_coach_board_get",
         "parameters": [
           {
@@ -5423,7 +6718,7 @@
           "coach"
         ],
         "summary": "Re-solve a plan on the athlete's behalf",
-        "description": "Requires live `build` permission. The result is **not yet theirs**.\n\nA coach-built plan lands as `pending_athlete_approval`; the athlete\napproves it before it becomes their active plan. The solve reads the\nathlete's constraints as inputs \u2014 it never writes one.",
+        "description": "Requires live `build` permission. The result is **not yet theirs**.\n\nA coach-built plan lands as `pending_athlete_approval`; the athlete\napproves it before it becomes their active plan. The solve reads the\nathlete's constraints as inputs — it never writes one.",
         "operationId": "build_for_athlete_api_v1_coach_athletes__athlete_id__plans__plan_id__build_post",
         "parameters": [
           {
@@ -5867,7 +7162,7 @@
           "share"
         ],
         "summary": "Open a shared plan",
-        "description": "Public by design \u2014 a share link is opened by someone with no account.\n\nRate-limited on the token prefix so the optional access code cannot be\nbrute-forced, and every open is recorded with a hashed IP.",
+        "description": "Public by design — a share link is opened by someone with no account.\n\nRate-limited on the token prefix so the optional access code cannot be\nbrute-forced, and every open is recorded with a hashed IP.",
         "operationId": "resolve_share_api_v1_shared__token__get",
         "parameters": [
           {
@@ -6859,6 +8154,502 @@
         }
       }
     },
+    "/api/v1/admin/users": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Find an account",
+        "description": "`total` counts everything matching, not what fits on the page.",
+        "operationId": "list_users_api_v1_admin_users_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "tier",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/UserTier"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tier"
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AdminRole"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AccountState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response List Users Api V1 Admin Users Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "One account, in administration terms",
+        "description": "Account facts and counts. No plans, no measurements, no next of kin.",
+        "operationId": "get_user_api_v1_admin_users__user_id__get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Get User Api V1 Admin Users  User Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/courses/submitted": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Athlete-submitted courses awaiting a decision",
+        "description": "Defaults to the queue. Pass a status to audit past decisions.",
+        "operationId": "submitted_courses_api_v1_admin_courses_submitted_get",
+        "parameters": [
+          {
+            "name": "curation_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CurationStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "unreviewed",
+              "title": "Curation Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Submitted Courses Api V1 Admin Courses Submitted Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/courses/{course_id}/publish": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List a submitted course to everyone",
+        "description": "The submitter stays on the row. The directory still says it was added\nby an athlete, because publishing reviews a course, it does not resurvey\none.",
+        "operationId": "publish_course_api_v1_admin_courses__course_id__publish_post",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CurationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Publish Course Api V1 Admin Courses  Course Id  Publish Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/courses/{course_id}/reject": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Decline a submitted course, with a reason",
+        "description": "Takes nothing away. The course stays usable by the athlete who added\nit and their plans against it are untouched.",
+        "operationId": "reject_course_api_v1_admin_courses__course_id__reject_post",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Reject Course Api V1 Admin Courses  Course Id  Reject Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/revenue": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Money in and money back, per currency",
+        "description": "Per currency, never summed across them.\n\nThis system stores no exchange rate, so a combined total would be a number\nwith no unit. A caller who needs one figure has to bring the rate that\nmakes it true.",
+        "operationId": "revenue_api_v1_admin_revenue_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "default": 30,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Revenue Api V1 Admin Revenue Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/support-access": {
       "get": {
         "tags": [
@@ -7161,6 +8952,30 @@
         ],
         "title": "AdminRole",
         "description": "RBAC by role, never a boolean.\n\nSupport cannot see bundle publish controls or the refunds workspace, and\nthat is expressed by not holding the role rather than by a UI condition."
+      },
+      "AdvisoryOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "tag": {
+            "type": "string",
+            "title": "Tag"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "tag",
+          "text"
+        ],
+        "title": "AdvisoryOut",
+        "description": "Where this plan sits outside the evidence behind its own model.\n\nDistinct from ``assumed_fields``, which is about inputs the athlete did not\nsupply. Every input can be present and the answer still rest on ground the\ndata does not cover — a heat decrement applied over a leg far longer than\nthe hour it was measured over, a curve held flat above its top knot.\n\nSays which numbers are soft, and never by how much: there is no correction\nterm to quote, and quoting one would be inventing it."
       },
       "AffectedPlanOut": {
         "properties": {
@@ -7847,6 +9662,21 @@
         ],
         "title": "BoardRowOut"
       },
+      "Body_upload_branding_logo_api_v1_coach_branding_logo_put": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File",
+            "description": "A PNG, JPEG or WebP"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_branding_logo_api_v1_coach_branding_logo_put"
+      },
       "Body_upload_file_api_v1_post_race_files_post": {
         "properties": {
           "file": {
@@ -7888,6 +9718,104 @@
           "file"
         ],
         "title": "Body_upload_leg_file_api_v1_course_submissions__submission_id__files__leg__put"
+      },
+      "BrandingOut": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "accent_hex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Hex"
+          },
+          "footer_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Footer Note"
+          },
+          "has_logo": {
+            "type": "boolean",
+            "title": "Has Logo",
+            "default": false
+          },
+          "effective_accent_hex": {
+            "type": "string",
+            "title": "Effective Accent Hex",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "BrandingOut",
+        "description": "A coach's mark, as configured. Never the logo bytes."
+      },
+      "BrandingUpdate": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "accent_hex": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 7
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Hex"
+          },
+          "footer_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Footer Note"
+          },
+          "clear_accent": {
+            "type": "boolean",
+            "title": "Clear Accent",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "BrandingUpdate",
+        "description": "Absent means unchanged. Explicitly clearing the accent is its own flag,\nbecause `null` and \"leave it alone\" are different intentions and a single\nnullable field cannot carry both."
       },
       "BundleDetail": {
         "properties": {
@@ -8483,6 +10411,238 @@
         ],
         "title": "CompareState"
       },
+      "ConditionsHistoryOut": {
+        "properties": {
+          "course_slug": {
+            "type": "string",
+            "title": "Course Slug"
+          },
+          "course_name": {
+            "type": "string",
+            "title": "Course Name"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ConditionsSummaryOut"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/ConditionsObservationOut"
+            },
+            "type": "array",
+            "title": "Observations"
+          },
+          "finish_times_available": {
+            "type": "boolean",
+            "title": "Finish Times Available",
+            "default": false
+          },
+          "empty_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Empty Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_slug",
+          "course_name",
+          "summary"
+        ],
+        "title": "ConditionsHistoryOut",
+        "description": "What race day has actually been like here.\n\n**There is no finish-time distribution.** It needs real results, which this\nsystem does not have and cannot obtain, so the field is absent rather than\ndrawn — `finish_times_available` says so in as many words, so a client does\nnot have to infer it from a missing key."
+      },
+      "ConditionsObservationOut": {
+        "properties": {
+          "observed_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Observed On"
+          },
+          "observed_hour": {
+            "type": "integer",
+            "title": "Observed Hour"
+          },
+          "air_temp_c": {
+            "type": "number",
+            "title": "Air Temp C"
+          },
+          "humidity_pct": {
+            "type": "number",
+            "title": "Humidity Pct"
+          },
+          "wind_speed_ms": {
+            "type": "number",
+            "title": "Wind Speed Ms"
+          },
+          "wind_dir_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wind Dir Deg"
+          },
+          "precipitation_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precipitation Mm"
+          },
+          "cloud_cover_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cloud Cover Pct"
+          },
+          "water_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Water Temp C"
+          }
+        },
+        "type": "object",
+        "required": [
+          "observed_on",
+          "observed_hour",
+          "air_temp_c",
+          "humidity_pct",
+          "wind_speed_ms"
+        ],
+        "title": "ConditionsObservationOut",
+        "description": "One past edition's race-morning weather, as the archive recorded it."
+      },
+      "ConditionsSummaryOut": {
+        "properties": {
+          "observations": {
+            "type": "integer",
+            "title": "Observations"
+          },
+          "median_air_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Air Temp C"
+          },
+          "median_humidity_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Humidity Pct"
+          },
+          "median_wind_speed_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Wind Speed Ms"
+          },
+          "warmest_air_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warmest Air Temp C"
+          },
+          "coolest_air_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coolest Air Temp C"
+          },
+          "water_observations": {
+            "type": "integer",
+            "title": "Water Observations",
+            "default": 0
+          },
+          "median_water_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Water Temp C"
+          },
+          "wetsuit_legal_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wetsuit Legal Fraction"
+          },
+          "wet_start_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wet Start Fraction"
+          }
+        },
+        "type": "object",
+        "required": [
+          "observations"
+        ],
+        "title": "ConditionsSummaryOut",
+        "description": "Medians, and the count they rest on.\n\nThe count travels with every figure deliberately: a median of two years is\na different claim from a median of ten, and a panel showing the number\nwithout it makes them look the same."
+      },
       "ConstraintHistoryOut": {
         "properties": {
           "id": {
@@ -8689,6 +10849,51 @@
         ],
         "title": "ConstraintOut"
       },
+      "ConstraintPointOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "change_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "value",
+          "unit",
+          "source",
+          "at"
+        ],
+        "title": "ConstraintPointOut"
+      },
       "ConstraintRefOut": {
         "properties": {
           "key": {
@@ -8777,10 +10982,47 @@
           "measured",
           "tested",
           "manual",
-          "estimated"
+          "estimated",
+          "imported"
         ],
         "title": "ConstraintSource",
-        "description": "Provenance. Law 2: it travels with every value, forever.\n\nNo branch in the solver reads this. An ``ESTIMATED`` constraint is used\nwith exactly the numeric weight of a ``MEASURED`` one \u2014 there is no\ndown-weighting anywhere (``SOLVER_MODEL.md`` \u00a70.6), and a CI test asserts\nit by permuting every source in a golden input and requiring\nbyte-identical numeric output."
+        "description": "Provenance. Law 2: it travels with every value, forever.\n\nNo branch in the solver reads this. An ``ESTIMATED`` constraint is used\nwith exactly the numeric weight of a ``MEASURED`` one — there is no\ndown-weighting anywhere (``SOLVER_MODEL.md`` §0.6), and a CI test asserts\nit by permuting every source in a golden input and requiring\nbyte-identical numeric output."
+      },
+      "ConstraintTrackOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ConstraintPointOut"
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "unit"
+        ],
+        "title": "ConstraintTrackOut"
       },
       "ConstraintWrite": {
         "properties": {
@@ -8829,7 +11071,7 @@
           "coming_soon"
         ],
         "title": "CourseAvailability",
-        "description": "Whether the directory row can actually be planned for yet.\n\nA course is listed long before it is planable. Announcing the season and\nthen hiding fourteen of its fifteen events would be worse for an athlete\nthan saying plainly which one is ready \u2014 so a ``COMING_SOON`` row is real,\nvisible and honest, and it simply cannot be entered."
+        "description": "Whether the directory row can actually be planned for yet.\n\nA course is listed long before it is planable. Announcing the season and\nthen hiding fourteen of its fifteen events would be worse for an athlete\nthan saying plainly which one is ready — so a ``COMING_SOON`` row is real,\nvisible and honest, and it simply cannot be entered."
       },
       "CourseDetail": {
         "properties": {
@@ -9063,7 +11305,7 @@
           "retired"
         ],
         "title": "CourseVisibility",
-        "description": "Who a course is listed for.\n\nThe two values are not a permission model \u2014 nothing sensitive hides behind\nthem. They separate the *marketing* course, which exists to show a signed\nout visitor what a race map looks like, from the *catalogue*, which is the\nset of real events an athlete can plan for. Showing both to a signed-in\nathlete would put an illustrative, deliberately out-of-scale map next to\nthe surveyed ones and invite them to be compared."
+        "description": "Who a course is listed for.\n\nThe two values are not a permission model — nothing sensitive hides behind\nthem. They separate the *marketing* course, which exists to show a signed\nout visitor what a race map looks like, from the *catalogue*, which is the\nset of real events an athlete can plan for. Showing both to a signed-in\nathlete would put an illustrative, deliberately out-of-scale map next to\nthe surveyed ones and invite them to be compared."
       },
       "CrowdStatus": {
         "type": "string",
@@ -9074,6 +11316,34 @@
           "rejected"
         ],
         "title": "CrowdStatus"
+      },
+      "CurationRequest": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "title": "CurationRequest"
+      },
+      "CurationStatus": {
+        "type": "string",
+        "enum": [
+          "unreviewed",
+          "published",
+          "rejected"
+        ],
+        "title": "CurationStatus",
+        "description": "Whether an athlete-submitted course has been reviewed into the catalogue.\n\nA submitted course is usable by the athlete who submitted it from the\nmoment it builds — they added it to race it, and making them wait on a\nqueue to plan their own race would be a worse product for no safety gain,\nbecause they are the only one who can see it.\n\nWhat review decides is the *other* direction: whether everyone else sees\nit too. The catalogue is the set of courses this system says are surveyed,\nand that claim is the product. One unchecked GPX trace promoted into it\nquietly makes every other row less trustworthy, because a reader cannot\ntell which kind of row they are looking at.\n\n``REJECTED`` does not delete anything or take the course away from its\nsubmitter. It records that it was looked at and not published, with a\nreason, so the next reviewer does not start again from nothing."
       },
       "Currency": {
         "type": "string",
@@ -9404,6 +11674,92 @@
         ],
         "title": "EntitlementOut"
       },
+      "ErasureImpactOut": {
+        "properties": {
+          "plans": {
+            "type": "integer",
+            "title": "Plans"
+          },
+          "races": {
+            "type": "integer",
+            "title": "Races"
+          },
+          "invoices": {
+            "type": "integer",
+            "title": "Invoices"
+          },
+          "active_subscription": {
+            "type": "boolean",
+            "title": "Active Subscription"
+          },
+          "coach_links": {
+            "type": "integer",
+            "title": "Coach Links"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plans",
+          "races",
+          "invoices",
+          "active_subscription",
+          "coach_links"
+        ],
+        "title": "ErasureImpactOut",
+        "description": "What deleting this account would destroy, in this account's own numbers.\n\nReturned before the deletion so the confirmation screen states facts rather\nthan a generic warning — \"4 plans and 2 invoices\" is a different decision\nfrom \"0 and 0\"."
+      },
+      "ErasureRequest": {
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Confirmation",
+            "description": "Must be exactly 'DELETE MY ACCOUNT'"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation"
+        ],
+        "title": "ErasureRequest",
+        "description": "A typed confirmation, not a boolean.\n\nA boolean can be sent by a mis-wired client. This cannot be undone, so the\ncaller has to send back the exact words."
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "INVALID_INPUT",
+          "INFEASIBLE",
+          "OVER_CEILING",
+          "UPLOAD_FAILED",
+          "STALE_DATA",
+          "PARTIAL_DATA",
+          "FREEZE_WINDOW",
+          "FORBIDDEN_STRUCTURAL",
+          "UNAUTHENTICATED",
+          "FORBIDDEN",
+          "PAYMENT_REQUIRED",
+          "NOT_FOUND",
+          "CONFLICT",
+          "SOLVER_TIMEOUT",
+          "RATE_LIMITED",
+          "INTERNAL_ERROR",
+          "SERVICE_UNAVAILABLE"
+        ],
+        "title": "ErrorCode",
+        "description": "Machine-readable classification. The frontend maps these to its copy."
+      },
       "EstimateOut": {
         "properties": {
           "key": {
@@ -9462,6 +11818,152 @@
           "NOT_SOLVED"
         ],
         "title": "Feasibility"
+      },
+      "ForecastOut": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          },
+          "days_away": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Away"
+          },
+          "horizon_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Horizon Hours"
+          },
+          "temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temp C"
+          },
+          "humidity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Humidity"
+          },
+          "wind_speed_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wind Speed Ms"
+          },
+          "wind_dir_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wind Dir Deg"
+          },
+          "conditions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conditions"
+          },
+          "water_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Water Temp C"
+          },
+          "pressure_hpa": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pressure Hpa"
+          },
+          "cloud_cover_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cloud Cover Pct"
+          },
+          "for_local_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "For Local Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "ForecastOut",
+        "description": "The forecast for a race's start hour, as it stands right now.\n\nDeliberately **not** the plan's ``forecast_snapshot``. That one is frozen\nat solve time and must stay frozen — Law 3 says a plan's numbers do not\nchange under the athlete. This is the live reading beside it, so the\ndifference between the two is visible and the athlete can decide whether\nto re-solve.\n\n``available`` is false rather than the response being a 404, because \"no\nforecast\" is an ordinary, expected state with several ordinary causes, and\neach of them wants different words on the screen. A 404 would say the race\ndoes not exist."
       },
       "ForgotPasswordRequest": {
         "properties": {
@@ -9632,6 +12134,78 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HelpArticleOut": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "read_minutes": {
+            "type": "integer",
+            "title": "Read Minutes"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slug",
+          "category",
+          "title",
+          "summary",
+          "read_minutes",
+          "body"
+        ],
+        "title": "HelpArticleOut"
+      },
+      "HelpArticleSummary": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "read_minutes": {
+            "type": "integer",
+            "title": "Read Minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slug",
+          "category",
+          "title",
+          "summary",
+          "read_minutes"
+        ],
+        "title": "HelpArticleSummary",
+        "description": "A card or a search hit. Deliberately without the body.\n\nThe list endpoint returns every article, and sending eight full bodies to\nrender eight cards would be most of a page of prose nobody asked for."
       },
       "IncidentRequest": {
         "properties": {
@@ -9840,7 +12414,7 @@
           "bad"
         ],
         "title": "MarginState",
-        "description": "Boundaries are closed from above (``SOLVER_MODEL.md`` \u00a73.5).\n\nExactly 20.0 is ``clear``; exactly 0.0 is ``tight``. Comparison is against\nthe value already rounded to 0.1 min, so a plan cannot flicker between\nstates on a float-representation difference."
+        "description": "Boundaries are closed from above (``SOLVER_MODEL.md`` §3.5).\n\nExactly 20.0 is ``clear``; exactly 0.0 is ``tight``. Comparison is against\nthe value already rounded to 0.1 min, so a plan cannot flicker between\nstates on a float-representation difference."
       },
       "MyPlansOut": {
         "properties": {
@@ -10082,9 +12656,18 @@
           "cutoff",
           "bundle",
           "analysis",
-          "digest"
+          "digest",
+          "plan_ready",
+          "coach_shared",
+          "athlete_accepted",
+          "payment_succeeded",
+          "payment_failed",
+          "subscription_renewing",
+          "support_access",
+          "course_reviewed"
         ],
-        "title": "NotificationType"
+        "title": "NotificationType",
+        "description": "Every kind of thing the system tells an athlete about.\n\nEach one corresponds to an event the code actually produces. There is no\nentry here for something a job might emit one day: an unreachable type\nshows up in the preferences screen as a switch that governs nothing."
       },
       "OverrideRequest": {
         "properties": {
@@ -10241,6 +12824,50 @@
               }
             ],
             "title": "Projected Label"
+          },
+          "t1_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T1 Minutes"
+          },
+          "t2_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T2 Minutes"
+          },
+          "t1_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T1 Label"
+          },
+          "t2_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T2 Label"
           },
           "feasibility": {
             "$ref": "#/components/schemas/Feasibility"
@@ -10456,6 +13083,20 @@
           "forecast_snapshot": {
             "type": "object",
             "title": "Forecast Snapshot"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ResponseWarningOut"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "advisories": {
+            "items": {
+              "$ref": "#/components/schemas/AdvisoryOut"
+            },
+            "type": "array",
+            "title": "Advisories"
           }
         },
         "type": "object",
@@ -10601,6 +13242,50 @@
               }
             ],
             "title": "Projected Label"
+          },
+          "t1_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T1 Minutes"
+          },
+          "t2_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T2 Minutes"
+          },
+          "t1_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T1 Label"
+          },
+          "t2_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T2 Label"
           },
           "feasibility": {
             "$ref": "#/components/schemas/Feasibility"
@@ -10893,7 +13578,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "ProfileUpdate",
-        "description": "What an athlete may change about themselves.\n\nDeliberately excludes ``email`` and ``tier``. Changing an email is an\nidentity change and needs re-verification to be one \u2014 a field on a settings\nform that silently moved someone's sign-in would be an account-takeover\nprimitive. Tier is what the billing system decided, so letting a client\nsend it would make the paywall a suggestion."
+        "description": "What an athlete may change about themselves.\n\nDeliberately excludes ``email`` and ``tier``. Changing an email is an\nidentity change and needs re-verification to be one — a field on a settings\nform that silently moved someone's sign-in would be an account-takeover\nprimitive. Tier is what the billing system decided, so letting a client\nsend it would make the paywall a suggestion."
       },
       "PromoteRequest": {
         "properties": {
@@ -11259,6 +13944,16 @@
             "type": "string",
             "title": "Plan Status"
           },
+          "display_status": {
+            "type": "string",
+            "title": "Display Status",
+            "default": "none"
+          },
+          "purchased": {
+            "type": "boolean",
+            "title": "Purchased",
+            "default": false
+          },
           "feasibility": {
             "type": "string",
             "title": "Feasibility"
@@ -11474,7 +14169,7 @@
           "start_time_local"
         ],
         "title": "RaceCreate",
-        "description": "Identify the course by slug or id \u2014 whichever the caller has.\n\nThe directory hands out slugs and the course detail page hands out ids;\nrequiring one specific form would make one of those screens do a lookup\nfor no reason."
+        "description": "Identify the course by slug or id — whichever the caller has.\n\nThe directory hands out slugs and the course detail page hands out ids;\nrequiring one specific form would make one of those screens do a lookup\nfor no reason."
       },
       "RaceFileFormat": {
         "type": "string",
@@ -11770,6 +14465,159 @@
         "type": "object",
         "title": "RaceUpdate"
       },
+      "RaceWeekOut": {
+        "properties": {
+          "race_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Race Id"
+          },
+          "event_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Event Date"
+          },
+          "visible": {
+            "type": "boolean",
+            "title": "Visible"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/RaceWeekTaskOut"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "remaining": {
+            "type": "integer",
+            "title": "Remaining",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "race_id",
+          "event_date",
+          "visible"
+        ],
+        "title": "RaceWeekOut",
+        "description": "The checklist, and whether it is worth showing yet."
+      },
+      "RaceWeekTaskCreate": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Due Date"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "due_date"
+        ],
+        "title": "RaceWeekTaskCreate"
+      },
+      "RaceWeekTaskOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Due Date"
+          },
+          "generated": {
+            "type": "boolean",
+            "title": "Generated"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "days_away": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Away"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "title",
+          "due_date",
+          "generated"
+        ],
+        "title": "RaceWeekTaskOut"
+      },
+      "RaceWeekTaskPatch": {
+        "properties": {
+          "completed": {
+            "type": "boolean",
+            "title": "Completed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "completed"
+        ],
+        "title": "RaceWeekTaskPatch"
+      },
       "RefundOut": {
         "properties": {
           "id": {
@@ -11855,6 +14703,21 @@
         ],
         "title": "RefundRequest"
       },
+      "RejectionRequest": {
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note"
+        ],
+        "title": "RejectionRequest"
+      },
       "ResetPasswordRequest": {
         "properties": {
           "token": {
@@ -11889,6 +14752,35 @@
         ],
         "title": "ResolveRequest"
       },
+      "ResponseWarningOut": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ResponseWarningOut",
+        "description": "A non-blocking caveat riding alongside a successful response.\n\nThe distinction from an error is load-bearing and is why this exists as a\nfield rather than as a status code: an error *replaces* the response, a\nwarning *accompanies* it. A plan built on a six-month-old FTP is still a\nplan, and refusing to return it would serve the athlete worse than\nreturning it with the caveat attached.\n\nOnly the codes in :data:`~raceos.api.errors.WARNING_CODES` can appear here;\n:meth:`~raceos.api.errors.WarningCollector.add` refuses anything else."
+      },
       "RiskLevel": {
         "type": "string",
         "enum": [
@@ -11920,6 +14812,230 @@
           "granted"
         ],
         "title": "RoleRequest"
+      },
+      "SearchHitOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "subtitle": {
+            "type": "string",
+            "title": "Subtitle"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "ref",
+          "title",
+          "subtitle"
+        ],
+        "title": "SearchHitOut",
+        "description": "One result.\n\n``ref`` is what the client needs to build a link — a course slug, a race or\nplan id, a help slug — rather than a URL. The frontend owns its route\ntable; a server emitting ``/plan?plan=`` would be a second copy of it, and\nsilently wrong the day a path changes."
+      },
+      "SeasonHistoryOut": {
+        "properties": {
+          "seasons": {
+            "items": {
+              "$ref": "#/components/schemas/SeasonOut"
+            },
+            "type": "array",
+            "title": "Seasons"
+          },
+          "constraints": {
+            "items": {
+              "$ref": "#/components/schemas/ConstraintTrackOut"
+            },
+            "type": "array",
+            "title": "Constraints"
+          }
+        },
+        "type": "object",
+        "title": "SeasonHistoryOut",
+        "description": "A season at a glance, and how the athlete moved across it."
+      },
+      "SeasonOut": {
+        "properties": {
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "planned_count": {
+            "type": "integer",
+            "title": "Planned Count"
+          },
+          "raced_count": {
+            "type": "integer",
+            "title": "Raced Count"
+          },
+          "races": {
+            "items": {
+              "$ref": "#/components/schemas/SeasonRaceOut"
+            },
+            "type": "array",
+            "title": "Races"
+          }
+        },
+        "type": "object",
+        "required": [
+          "season",
+          "label",
+          "planned_count",
+          "raced_count"
+        ],
+        "title": "SeasonOut"
+      },
+      "SeasonRaceOut": {
+        "properties": {
+          "race_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Race Id"
+          },
+          "course_name": {
+            "type": "string",
+            "title": "Course Name"
+          },
+          "course_place": {
+            "type": "string",
+            "title": "Course Place"
+          },
+          "course_slug": {
+            "type": "string",
+            "title": "Course Slug"
+          },
+          "distance_type": {
+            "type": "string",
+            "title": "Distance Type"
+          },
+          "event_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Event Date"
+          },
+          "race_status": {
+            "type": "string",
+            "title": "Race Status"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "plan_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Version"
+          },
+          "goal_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal Minutes"
+          },
+          "projected_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Minutes"
+          },
+          "actual_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Minutes"
+          },
+          "has_analysis": {
+            "type": "boolean",
+            "title": "Has Analysis",
+            "default": false
+          },
+          "goal_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal Label"
+          },
+          "projected_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Label"
+          },
+          "actual_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "race_id",
+          "course_name",
+          "course_place",
+          "course_slug",
+          "distance_type",
+          "event_date",
+          "race_status"
+        ],
+        "title": "SeasonRaceOut"
       },
       "SegmentOut": {
         "properties": {
@@ -12356,7 +15472,7 @@
           "expires_at"
         ],
         "title": "SharedPlanOut",
-        "description": "Built from an allow-list.\n\nNote what is absent: every constraint value, the athlete's weight, their\nemail, their tier, their other races. No scope includes them \u2014 not even\n``full_plan``."
+        "description": "Built from an allow-list.\n\nNote what is absent: every constraint value, the athlete's weight, their\nemail, their tier, their other races. No scope includes them — not even\n``full_plan``."
       },
       "SignupRequest": {
         "properties": {
@@ -12903,6 +16019,98 @@
         "type": "object",
         "title": "SubmissionUpdate"
       },
+      "SubscribeRequest": {
+        "properties": {
+          "tier": {
+            "$ref": "#/components/schemas/UserTier"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tier"
+        ],
+        "title": "SubscribeRequest",
+        "description": "Which recurring tier to buy.\n\nNo currency: a subscription is billed against a provider price id, and\nthat id already fixes the currency. Accepting one here would let a client\nask for euros and be charged in pounds, with the response quoting the\nfigure it asked for."
+      },
+      "SubscribeResponse": {
+        "properties": {
+          "subscription": {
+            "$ref": "#/components/schemas/SubscriptionOut"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Secret"
+          }
+        },
+        "type": "object",
+        "required": [
+          "subscription"
+        ],
+        "title": "SubscribeResponse",
+        "description": "The agreement, plus what the client needs to confirm a payment method.\n\n``client_secret`` is returned once, never stored and never logged. It is\nabsent when the provider needed no confirmation — a returning customer\nwith a card on file — and that absence is a success, not a failure."
+      },
+      "SubscriptionOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/UserTier"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubscriptionStatus"
+          },
+          "renews_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Renews At"
+          },
+          "cancel_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tier",
+          "status"
+        ],
+        "title": "SubscriptionOut"
+      },
+      "SubscriptionStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "cancelled",
+          "past_due"
+        ],
+        "title": "SubscriptionStatus"
+      },
       "SupportRequest": {
         "properties": {
           "athlete_id": {
@@ -12932,7 +16140,7 @@
           "rough_chipseal"
         ],
         "title": "SurfaceQuality",
-        "description": "From the course bundle, not the athlete (``SOLVER_MODEL.md`` \u00a7I.2.2).\n\nBecomes ``Crr``. The gap between ``typical_road`` (0.0050) and\n``rough_chipseal`` (0.0065) is worth about eight minutes over 180 km, so\na surface change must show up in the blast-radius diff rather than pass\nsilently."
+        "description": "From the course bundle, not the athlete (``SOLVER_MODEL.md`` §I.2.2).\n\nBecomes ``Crr``. The gap between ``typical_road`` (0.0050) and\n``rough_chipseal`` (0.0065) is worth about eight minutes over 180 km, so\na surface change must show up in the blast-radius diff rather than pass\nsilently."
       },
       "UnitSystem": {
         "type": "string",

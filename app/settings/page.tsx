@@ -17,8 +17,9 @@
  * not render gets wiped.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AccountHeader } from "@/components/AccountHeader";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiErrorState } from "@/components/ApiErrorState";
@@ -26,11 +27,15 @@ import { routes } from "@/lib/routes";
 import { GuardedPage } from "@/lib/auth/GuardedPage";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { client, unwrap } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/errors";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  ERASURE_CONFIRMATION,
   formatDate,
   useConstraints,
+  useDeleteAccount,
+  useErasureImpact,
   useInvoices,
   usePreferences,
   useSaveConstraint,
@@ -39,7 +44,17 @@ import {
   type DriftSensitivity,
   type Preference,
 } from "@/lib/api/account";
-import { useEntitlements, usePrices, priceFor, formatPrice } from "@/lib/api/billing";
+import {
+  activeSubscription,
+  formatPrice,
+  priceFor,
+  useCancelSubscription,
+  useEntitlements,
+  usePrices,
+  useResumeSubscription,
+  useSubscribe,
+  useSubscriptions,
+} from "@/lib/api/billing";
 import {
   CONF_FG,
   SENSITIVITY,
@@ -234,6 +249,164 @@ function ProfileTab({ indicator }: { indicator: ReturnType<typeof useSaveIndicat
           onChange={(level) => save.mutate({ level })}
         />
       </div>
+
+      <DangerZone />
+    </div>
+  );
+}
+
+/**
+ * Deleting the account.
+ *
+ * Three things this does that a plain "are you sure?" does not:
+ *
+ * 1. It reads `GET /auth/me/erasure-impact` first and shows the counts *in*
+ *    the confirmation. "This removes 4 plans and 2 races" is a decision
+ *    somebody can actually make.
+ * 2. It requires the exact words the server requires. The field is not
+ *    pre-filled and the button stays disabled until they match, because a
+ *    confirmation the client supplies for you is not a confirmation.
+ * 3. It says, before anything is typed, that a live subscription has to be
+ *    cancelled first — the server refuses that case, and finding out by
+ *    being refused after typing the words is a worse way to learn it.
+ */
+function DangerZone() {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [reason, setReason] = useState("");
+  const { signOut } = useAuth();
+  const impact = useErasureImpact(open);
+  const erase = useDeleteAccount();
+
+  const blocked = impact.data?.active_subscription === true;
+  const ready = typed === ERASURE_CONFIRMATION && !blocked && !erase.isPending;
+
+  function destroy() {
+    erase.mutate(
+      { confirmation: typed, reason: reason || undefined },
+      // The account is gone; the session that addressed it is meaningless.
+      // Signing out also drops the whole query cache.
+      { onSuccess: () => void signOut() },
+    );
+  }
+
+  if (!open) {
+    return (
+      <div style={{ marginTop: 40, paddingTop: 26, borderTop: "1px solid rgba(21,20,15,.1)" }}>
+        <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>
+          DELETE ACCOUNT
+        </div>
+        <p style={{ margin: "12px 0 0", maxWidth: 520, fontSize: 14, lineHeight: 1.6, color: "#6B6455" }}>
+          Erases your account and everything personal on it. Invoices survive as
+          legally-required records with your name removed from them. This cannot be undone.
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          style={{ height: 40, padding: "0 18px", marginTop: 16, borderRadius: 7, border: "1px solid rgba(192,57,43,.4)", background: "transparent", color: "#C0392B", fontSize: 14, fontWeight: 500, cursor: "pointer" }}
+        >
+          Delete my account
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 40, padding: "24px 26px", borderRadius: 10, border: "1px solid rgba(192,57,43,.3)", background: "rgba(192,57,43,.035)" }}>
+      <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#C0392B" }}>
+        DELETE ACCOUNT
+      </div>
+
+      {impact.isPending ? (
+        <div style={{ marginTop: 16 }}><Skeleton width="100%" height={64} /></div>
+      ) : impact.error ? (
+        <div style={{ marginTop: 16 }}>
+          <ApiErrorState error={impact.error} onRetry={() => void impact.refetch()} />
+        </div>
+      ) : (
+        <>
+          <p style={{ margin: "14px 0 0", maxWidth: 540, fontSize: 15, lineHeight: 1.6, color: "#302C24" }}>
+            This permanently removes{" "}
+            <strong style={{ fontWeight: 600 }}>{impact.data.plans} plan{impact.data.plans === 1 ? "" : "s"}</strong>,{" "}
+            <strong style={{ fontWeight: 600 }}>{impact.data.races} race{impact.data.races === 1 ? "" : "s"}</strong>
+            {impact.data.coach_links > 0 && (
+              <>
+                {" "}and{" "}
+                <strong style={{ fontWeight: 600 }}>
+                  {impact.data.coach_links} coach link{impact.data.coach_links === 1 ? "" : "s"}
+                </strong>
+              </>
+            )}
+            . {impact.data.invoices > 0 && (
+              <>
+                Your {impact.data.invoices} invoice{impact.data.invoices === 1 ? "" : "s"} stay as
+                required records, with your name removed.
+              </>
+            )}
+          </p>
+
+          {blocked && (
+            <p style={{ margin: "16px 0 0", maxWidth: 540, fontSize: 14, lineHeight: 1.6, color: "#C0392B" }}>
+              You have a live subscription. Cancel it on the Billing tab first — deleting the
+              account while it is running would leave you charged with no way to see the receipt.
+            </p>
+          )}
+
+          <label style={{ display: "block", marginTop: 20, maxWidth: 420 }}>
+            <span className="mono" style={{ display: "block", fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>
+              TYPE {ERASURE_CONFIRMATION} TO CONFIRM
+            </span>
+            <input
+              value={typed}
+              onChange={(event) => setTyped(event.target.value)}
+              disabled={blocked || erase.isPending}
+              autoComplete="off"
+              style={{ width: "100%", height: 40, padding: "0 12px", marginTop: 8, borderRadius: 7, border: "1px solid rgba(21,20,15,.16)", background: "#fff", fontSize: 14 }}
+            />
+          </label>
+
+          <label style={{ display: "block", marginTop: 14, maxWidth: 420 }}>
+            <span className="mono" style={{ display: "block", fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>
+              WHY, IF YOU WANT TO SAY (OPTIONAL)
+            </span>
+            <input
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              disabled={blocked || erase.isPending}
+              style={{ width: "100%", height: 40, padding: "0 12px", marginTop: 8, borderRadius: 7, border: "1px solid rgba(21,20,15,.16)", background: "#fff", fontSize: 14 }}
+            />
+          </label>
+
+          {erase.error && (
+            <div style={{ marginTop: 16 }}>
+              <ApiErrorState error={erase.error} />
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+            <button
+              type="button"
+              disabled={!ready}
+              onClick={destroy}
+              style={{ height: 40, padding: "0 18px", borderRadius: 7, border: "none", background: ready ? "#C0392B" : "rgba(192,57,43,.3)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: ready ? "pointer" : "default" }}
+            >
+              {erase.isPending ? "Deleting…" : "Delete permanently"}
+            </button>
+            <button
+              type="button"
+              disabled={erase.isPending}
+              onClick={() => {
+                setOpen(false);
+                setTyped("");
+                setReason("");
+              }}
+              style={{ height: 40, padding: "0 18px", borderRadius: 7, border: "1px solid rgba(21,20,15,.18)", background: "transparent", fontSize: 14, cursor: "pointer" }}
+            >
+              Keep my account
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -539,15 +712,41 @@ function NotificationsTab({ indicator }: { indicator: ReturnType<typeof useSaveI
 // ---------------------------------------------------------------------------
 
 function BillingTab() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const invoices = useInvoices();
   const prices = usePrices();
   const entitlements = useEntitlements();
+  const subscriptions = useSubscriptions();
+  const subscribe = useSubscribe();
+  const cancel = useCancelSubscription();
+  const resume = useResumeSubscription();
+  const [problem, setProblem] = useState<string | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   const tier = user?.tier ?? "free";
   const tierName = TIER_LABEL[tier] ?? tier;
   const price = priceFor(prices.data, tier === "free" ? "season" : tier, user?.currency ?? "GBP");
   const rows = invoices.data ?? [];
+  const live = activeSubscription(subscriptions.data);
+  const busy = subscribe.isPending || cancel.isPending || resume.isPending;
+
+  /**
+   * Every mutation here refreshes the signed-in user as well as the queries.
+   * The tier lives on the user and liveness on the agreement — the server
+   * writes both together — so a screen that refreshed only one would show a
+   * cancelled athlete their old tier until they reloaded.
+   */
+  const run = async (work: Promise<unknown>) => {
+    setProblem(null);
+    try {
+      await work;
+      await refresh();
+    } catch (caught) {
+      setProblem(
+        caught instanceof ApiError ? caught.message : "That did not go through. Try again.",
+      );
+    }
+  };
 
   /**
    * Entitlements are the honest statement of what this account can do, and
@@ -597,11 +796,113 @@ function BillingTab() {
               </div>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
-            <Link href={routes.pricing} className="btn-dark-to-accent" style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", height: 42, padding: "0 18px", background: "#FBF8F2", color: "#15140F", borderRadius: 6, fontSize: 13.5, fontWeight: 600 }}>
-              {tier === "free" ? "See the plans" : "Change plan"}
+          {/* What the agreement is doing, when it is doing something other
+              than simply renewing. A scheduled cancellation is the case that
+              most needs saying out loud: the athlete has paid for this period
+              and keeps every entitlement until it ends. */}
+          {live?.cancel_at && (
+            <div style={{ marginTop: 20, padding: "14px 16px", borderRadius: 8, background: "rgba(224,163,60,.14)" }}>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#E0A33C" }}>ENDING</div>
+              <p style={{ margin: "8px 0 0", fontSize: 13.5, lineHeight: 1.55, color: "rgba(251,248,242,.78)" }}>
+                This ends on {formatDate(live.cancel_at)}. Everything it unlocks keeps working
+                until then, and every plan you have already been charged for stays yours for good.
+              </p>
+            </div>
+          )}
+          {live?.status === "past_due" && (
+            <div style={{ marginTop: 20, padding: "14px 16px", borderRadius: 8, background: "rgba(228,98,47,.16)" }}>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#E4622F" }}>PAYMENT PENDING</div>
+              <p style={{ margin: "8px 0 0", fontSize: 13.5, lineHeight: 1.55, color: "rgba(251,248,242,.78)" }}>
+                The last payment on this has not gone through yet. It starts working as soon as it
+                does — we do not unlock anything against a card that has not cleared.
+              </p>
+            </div>
+          )}
+          {!live?.renews_at || live.cancel_at ? null : (
+            <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".13em", color: "rgba(251,248,242,.4)", marginTop: 20 }}>
+              RENEWS {formatDate(live.renews_at).toUpperCase()}
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 24 }}>
+            {/* The two recurring tiers, bought here. `per_race` is not offered
+                because it is not a subscription — it is bought against one
+                plan, at that plan's checkout. */}
+            {(["season", "coach"] as const)
+              .filter((target) => target !== tier || Boolean(live?.cancel_at))
+              .map((target) => {
+                const targetPrice = priceFor(prices.data, target, user?.currency ?? "GBP");
+                return (
+                  <button
+                    key={target}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void run(subscribe.mutateAsync(target))}
+                    style={{
+                      display: "inline-flex", alignItems: "center", whiteSpace: "nowrap",
+                      height: 42, padding: "0 18px", border: "none", borderRadius: 6,
+                      background: target === "season" ? "#FBF8F2" : "rgba(251,248,242,.12)",
+                      color: target === "season" ? "#15140F" : "#FBF8F2",
+                      fontSize: 13.5, fontWeight: 600, cursor: busy ? "wait" : "pointer",
+                      opacity: busy ? 0.6 : 1,
+                    }}
+                  >
+                    {tier === "free" ? "Start" : "Move to"} {TIER_LABEL[target]}
+                    {targetPrice ? ` · ${formatPrice(targetPrice.amount_cents, targetPrice.currency)}` : ""}
+                  </button>
+                );
+              })}
+
+            {live && !live.cancel_at && (
+              confirmingCancel ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void run(cancel.mutateAsync(live.id)).then(() => setConfirmingCancel(false))}
+                    style={{ height: 42, padding: "0 18px", border: "1px solid rgba(228,98,47,.5)", borderRadius: 6, background: "transparent", color: "#E4622F", fontSize: 13.5, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}
+                  >
+                    Yes, stop renewing
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingCancel(false)}
+                    style={{ height: 42, padding: "0 14px", border: "none", borderRadius: 6, background: "transparent", color: "rgba(251,248,242,.55)", fontSize: 13.5, cursor: "pointer" }}
+                  >
+                    Keep it
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setConfirmingCancel(true)}
+                  style={{ height: 42, padding: "0 18px", border: "1px solid rgba(251,248,242,.24)", borderRadius: 6, background: "transparent", color: "rgba(251,248,242,.7)", fontSize: 13.5, cursor: "pointer" }}
+                >
+                  Cancel subscription
+                </button>
+              )
+            )}
+
+            {live?.cancel_at && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void run(resume.mutateAsync(live.id))}
+                style={{ height: 42, padding: "0 18px", border: "1px solid rgba(124,192,143,.5)", borderRadius: 6, background: "transparent", color: "#7CC08F", fontSize: 13.5, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}
+              >
+                Keep it after all
+              </button>
+            )}
+
+            <Link href={routes.pricing} style={{ display: "inline-flex", alignItems: "center", height: 42, padding: "0 6px", color: "rgba(251,248,242,.5)", fontSize: 13.5 }}>
+              Compare the tiers
             </Link>
           </div>
+
+          {problem && (
+            <p style={{ margin: "16px 0 0", fontSize: 13.5, lineHeight: 1.5, color: "#E4622F" }}>{problem}</p>
+          )}
         </div>
 
         <div style={{ ...CARD, padding: "26px 28px" }}>
@@ -669,7 +970,17 @@ function TabSkeleton() {
 // ---------------------------------------------------------------------------
 
 function SettingsPage() {
-  const [tab, setTab] = useState<Tab>("profile");
+  /**
+   * `?tab=` opens a specific pane, so a link from elsewhere can land on the
+   * thing it promised. Validated against `TABS` rather than cast: the value
+   * comes off the URL, and an unknown one should open Profile rather than
+   * render nothing.
+   */
+  const searchParams = useSearchParams();
+  const requested = searchParams.get("tab");
+  const [tab, setTab] = useState<Tab>(
+    TABS.some((t) => t.k === requested) ? (requested as Tab) : "profile",
+  );
   const indicator = useSaveIndicator();
   const { user } = useAuth();
   const tierName = TIER_LABEL[user?.tier ?? "free"] ?? user?.tier ?? "—";
@@ -699,9 +1010,14 @@ function SettingsPage() {
             <div style={{ marginTop: 22, padding: "18px 20px", borderRadius: 10, background: "rgba(21,20,15,.045)" }}>
               <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>PLAN</div>
               <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-.022em", marginTop: 9 }}>{tierName}</div>
-              <Link href={routes.pricing} className="mono link-accent" style={{ display: "inline-block", fontSize: 9.5, letterSpacing: ".12em", color: "#C6461B", marginTop: 8 }}>
+              <button
+                type="button"
+                onClick={() => setTab("billing")}
+                className="mono link-accent"
+                style={{ display: "inline-block", padding: 0, border: "none", background: "transparent", fontSize: 9.5, letterSpacing: ".12em", color: "#C6461B", marginTop: 8, cursor: "pointer" }}
+              >
                 {user?.tier === "free" ? "SEE THE PLANS →" : "CHANGE PLAN →"}
-              </Link>
+              </button>
             </div>
           </div>
 
@@ -721,7 +1037,12 @@ function SettingsPage() {
 export default function GuardedSettingsPage() {
   return (
     <GuardedPage>
-      <SettingsPage />
+      {/* `useSearchParams` suspends during prerender, and this is a static
+          export — without a boundary the whole page would bail out of being
+          prerenderable. The fallback is the same skeleton a slow tab shows. */}
+      <Suspense fallback={<TabSkeleton />}>
+        <SettingsPage />
+      </Suspense>
     </GuardedPage>
   );
 }

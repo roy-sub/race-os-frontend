@@ -48,7 +48,9 @@ function useCourseLinks(): { href: string; label: string }[] {
  * tells a visitor a large one: that nobody has walked the site recently.
  */
 const athleteLinks = [
-  { href: routes.guide, label: "First iron distance" },
+  // Labelled for what is behind it. It used to say "First iron distance",
+  // which named an article that did not exist.
+  { href: routes.guide, label: "Help and guides" },
   { href: routes.coach, label: "Coaches" },
   { href: routes.howItWorks, label: "Method" },
 ];

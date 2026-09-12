@@ -229,7 +229,23 @@ export interface paths {
         get: operations["me_api_v1_auth_me_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete this account (GDPR erasure)
+         * @description **Irreversible, and only ever by the person who holds the account.**
+         *
+         *     Not a hard delete. Invoices are financial records with statutory
+         *     retention, plans a coach built are that coach's work too, and the audit
+         *     log has to stay referentially intact — so the row survives as a tombstone
+         *     with an id, a state and a timestamp, and every field that identifies a
+         *     person is scrubbed. Enough for an invoice to point somewhere; not enough
+         *     to say who it was.
+         *
+         *     Every session is revoked and every token issued before now stops
+         *     verifying, so an access token still sitting in another tab dies with the
+         *     account rather than outliving it. The response is the last thing this
+         *     account will ever receive.
+         */
+        delete: operations["erase_me_api_v1_auth_me_delete"];
         options?: never;
         head?: never;
         /**
@@ -245,6 +261,29 @@ export interface paths {
          *     no shape of request that edits somebody else.
          */
         patch: operations["update_me_api_v1_auth_me_patch"];
+        trace?: never;
+    };
+    "/api/v1/auth/me/erasure-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What deleting this account would destroy
+         * @description Read before the delete, so the confirmation states facts.
+         *
+         *     "4 plans and 2 invoices" is a different decision from "0 and 0", and a
+         *     generic warning makes both look the same.
+         */
+        get: operations["erasure_impact_api_v1_auth_me_erasure_impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/courses": {
@@ -297,6 +336,35 @@ export interface paths {
         };
         /** The bundle a client should read */
         get: operations["get_bundle_api_v1_courses__course_ref__bundle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{course_ref}/conditions-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What race day has actually been like
+         * @description Public, like the rest of recon. **Observed, never modelled.**
+         *
+         *     Every figure is reanalysis from the weather archive for this course's own
+         *     coordinates, at the race's own start hour, on the day the race was held.
+         *     Where a value is unavailable it is absent: a lake course has no
+         *     sea-surface temperature, so it has no water temperature and therefore no
+         *     wetsuit likelihood, rather than one inferred from the air.
+         *
+         *     There is no finish-time distribution. It needs actual results, which this
+         *     system does not have and cannot obtain, and the prototype's was drawn.
+         */
+        get: operations["get_conditions_history_api_v1_courses__course_ref__conditions_history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -490,6 +558,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search races, plans, courses and help
+         * @description Public, and scoped to the asker.
+         *
+         *     A signed-out visitor gets courses and help; a signed-in athlete also gets
+         *     their own races and plans, filtered by owner in SQL rather than after the
+         *     fact. Courses reuse the directory's own visibility filter, so a search
+         *     cannot surface a row the directory would not list.
+         *
+         *     A query under two characters returns nothing rather than most of the
+         *     library: it is almost always a keystroke on the way to a real one.
+         */
+        get: operations["search_api_v1_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/help": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every help article
+         * @description Grouped by category in reading order, not alphabetically.
+         *
+         *     "Getting started" before "Billing" is the whole point of having an order.
+         */
+        get: operations["list_articles_api_v1_help_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/help/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The published categories, in reading order */
+        get: operations["list_categories_api_v1_help_categories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/help/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One article in full */
+        get: operations["get_article_api_v1_help__slug__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/constraints": {
         parameters: {
             query?: never;
@@ -497,7 +649,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Current values with provenance */
+        /**
+         * Current values with provenance
+         * @description Staleness rides on each row's ``stale`` flag, not in a warnings array.
+         *
+         *     This response is a list, so there is no top-level object for a caveat to
+         *     sit in — and a per-row flag is the better surface anyway, because the
+         *     screen rendering it puts the warning beside the value it is about rather
+         *     than in a banner the reader has to match up by hand. The ``warnings``
+         *     array is for responses where the athlete cannot see which input is at
+         *     fault: a solved plan carries it (see ``GET /plans/{id}``), a table of the
+         *     inputs themselves does not need it.
+         */
         get: operations["list_constraints_api_v1_constraints_get"];
         put?: never;
         post?: never;
@@ -793,6 +956,115 @@ export interface paths {
         patch: operations["update_race_api_v1_races__race_id__patch"];
         trace?: never;
     };
+    "/api/v1/races/{race_id}/forecast": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The live forecast for this race's start hour
+         * @description The forecast as it stands **now**, beside the one the plan was solved on.
+         *
+         *     A solved plan freezes its ``forecast_snapshot`` and keeps it frozen — Law 3
+         *     says a plan's numbers do not change under the athlete. That is the right
+         *     behaviour and it leaves a gap: nothing showed what the weather is actually
+         *     doing, so an athlete could not see that the plan they are holding was
+         *     solved against a forecast that has since moved eight degrees. This closes
+         *     it without touching the plan.
+         *
+         *     Never 4xx for an absent forecast. "No forecast" is an ordinary state with
+         *     three ordinary causes, each of which wants different words on the screen,
+         *     and a 404 here would say the race does not exist.
+         *
+         *     The response commits because ``fetch_forecast`` writes the provider's reply
+         *     into the TTL cache. That is a read-through cache doing its job on a GET,
+         *     not a mutation: dropping the write would re-fetch on every render.
+         */
+        get: operations["get_race_forecast_api_v1_races__race_id__forecast_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/races/{race_id}/race-week": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The race-week checklist
+         * @description Dated, checkable tasks. **Generated on read, idempotently.**
+         *
+         *     The ICS export has always derived the right dates from the event date — a
+         *     Tuesday race gets a Saturday check-in — but a calendar event cannot be
+         *     ticked off and nothing was stored, so "have I handed in the special-needs
+         *     bag?" had no answer. Both now come from one derivation, so the calendar
+         *     and the checklist cannot disagree about the same week.
+         *
+         *     Generating here rather than in a job means a race entered five minutes ago
+         *     has a checklist, instead of waiting for a cron that may not run before race
+         *     week.
+         */
+        get: operations["get_race_week_api_v1_races__race_id__race_week_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/races/{race_id}/race-week/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add your own race-week task
+         * @description Sits beside the derived ones, in date order. To the athlete it is one
+         *     list, so it is one list.
+         */
+        post: operations["add_race_week_task_api_v1_races__race_id__race_week_tasks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/races/race-week/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a task you added
+         * @description Yours only. A derived task is part of the race rather than a note, and
+         *     removing "bike check-in" because it is inconvenient is not something the
+         *     checklist should help with — ticking it off is.
+         */
+        delete: operations["delete_race_week_task_api_v1_races_race_week_tasks__task_id__delete"];
+        options?: never;
+        head?: never;
+        /** Tick a task off, or un-tick it */
+        patch: operations["set_race_week_task_api_v1_races_race_week_tasks__task_id__patch"];
+        trace?: never;
+    };
     "/api/v1/plans/{plan_id}/export": {
         parameters: {
             query?: never;
@@ -824,7 +1096,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The race card, as a printable A5 page */
+        /**
+         * The race card, as a printable A5 page
+         * @description **Unbranded by default, deliberately.**
+         *
+         *     A branded artefact is something a coach hands over on purpose. An athlete
+         *     downloading their own race card gets the house document unless somebody
+         *     chose otherwise — and the choice is checked against the coach's
+         *     entitlement rather than taken on trust from a query parameter.
+         */
         get: operations["export_race_card_api_v1_plans__plan_id__export_race_card_pdf_get"];
         put?: never;
         post?: never;
@@ -989,6 +1269,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * This user's subscriptions
+         * @description Newest first, cancelled ones included — a past agreement is history the
+         *     billing page has to be able to show.
+         */
+        get: operations["list_subscriptions_api_v1_subscriptions_get"];
+        put?: never;
+        /**
+         * Buy a season pass or a coach seat
+         * @description The two recurring tiers, which until now could only be inserted by hand.
+         *
+         *     **Not two-phase, unlike a race plan.** A plan is authorized and captured
+         *     only if the solve succeeds, because the athlete might not get what they
+         *     paid for. A season pass is a subscription to a service that is available
+         *     the moment it starts, so there is nothing to hold money against.
+         *
+         *     **The row takes whatever status the provider reports, and nothing else.**
+         *     Against Stripe that means a new agreement opens ``incomplete`` — stored as
+         *     PAST_DUE — until the first payment confirms, because entitlements must not
+         *     follow from a card that has not cleared. What activates it is the
+         *     provider's own webhook, the same path that already reconciles every other
+         *     payment state; the client confirms the card with the returned
+         *     ``client_secret`` first. The in-memory gateway has no card to confirm, so
+         *     a subscription it opens is live immediately, which is what makes a local
+         *     run and the whole test suite work without credentials.
+         *
+         *     An athlete who already subscribes is *moved* to the new tier rather than
+         *     sold a second agreement.
+         */
+        post: operations["subscribe_api_v1_subscriptions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/{subscription_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop renewing
+         * @description Ends at the period boundary. **Nothing already paid for is taken back.**
+         *
+         *     Not a courtesy — it is what was bought. The athlete has paid for the period
+         *     they are in, and every race they captured a payment for stays theirs
+         *     permanently regardless, because that is a purchase rather than a
+         *     subscription.
+         */
+        post: operations["cancel_subscription_api_v1_subscriptions__subscription_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/{subscription_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo a pending cancellation
+         * @description Only before it takes effect. Once the period has ended there is nothing
+         *     to resume and the athlete subscribes again.
+         */
+        post: operations["resume_subscription_api_v1_subscriptions__subscription_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/invoices": {
         parameters: {
             query?: never;
@@ -1073,6 +1442,35 @@ export interface paths {
         };
         /** Plans grouped as the screen groups them */
         get: operations["get_my_plans_api_v1_my_plans_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/season-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A season at a glance, and constraint drift across it
+         * @description The Season Pass view. **Gated on the tier that is sold with it.**
+         *
+         *     Two things, and the second is the one that did not exist anywhere:
+         *     constraint history was per key (`GET /constraints/{key}/history`), which
+         *     answers "how has my FTP moved?" and cannot answer "what changed about me
+         *     last year?" — the question the tier is sold on. Assembling that from eight
+         *     separate requests is something a client should not have to do.
+         *
+         *     Seasons are grouped from October rather than January, so a race in the new
+         *     year sits with the autumn that prepared it.
+         */
+        get: operations["get_season_history_api_v1_season_history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1440,6 +1838,64 @@ export interface paths {
         /** Keep the value you have */
         post: operations["dismiss_calibration_api_v1_post_race_calibrations__calibration_id__dismiss_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coach/branding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My branding */
+        get: operations["get_branding_api_v1_coach_branding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set a display name, accent or footer line
+         * @description **One colour, not a theme.**
+         *
+         *     The accent replaces a single value and is refused if it would not survive
+         *     printing: the race card is read in a transition tent, often through a wet
+         *     sleeve and often after somebody photocopied it, and the person holding an
+         *     unreadable one cannot fix it. The layout, the typography and every
+         *     safeguard in the artefact are fixed.
+         */
+        patch: operations["update_branding_api_v1_coach_branding_patch"];
+        trace?: never;
+    };
+    "/api/v1/coach/branding/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The stored logo
+         * @description Served from its own endpoint rather than inlined on the settings read.
+         *
+         *     A base64 blob on every read would be most of the payload, for an image the
+         *     screen shows once.
+         */
+        get: operations["get_branding_logo_api_v1_coach_branding_logo_get"];
+        /**
+         * Upload a logo
+         * @description PNG, JPEG or WebP, and the bytes are checked against what they claim.
+         *
+         *     No SVG: it is a document format carrying script and external references,
+         *     and this file is rendered into a PDF on our own server.
+         */
+        put: operations["upload_branding_logo_api_v1_coach_branding_logo_put"];
+        post?: never;
+        /** Remove the logo */
+        delete: operations["delete_branding_logo_api_v1_coach_branding_logo_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2028,6 +2484,133 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find an account
+         * @description `total` counts everything matching, not what fits on the page.
+         */
+        get: operations["list_users_api_v1_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One account, in administration terms
+         * @description Account facts and counts. No plans, no measurements, no next of kin.
+         */
+        get: operations["get_user_api_v1_admin_users__user_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/courses/submitted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Athlete-submitted courses awaiting a decision
+         * @description Defaults to the queue. Pass a status to audit past decisions.
+         */
+        get: operations["submitted_courses_api_v1_admin_courses_submitted_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/courses/{course_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * List a submitted course to everyone
+         * @description The submitter stays on the row. The directory still says it was added
+         *     by an athlete, because publishing reviews a course, it does not resurvey
+         *     one.
+         */
+        post: operations["publish_course_api_v1_admin_courses__course_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/courses/{course_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline a submitted course, with a reason
+         * @description Takes nothing away. The course stays usable by the athlete who added
+         *     it and their plans against it are untouched.
+         */
+        post: operations["reject_course_api_v1_admin_courses__course_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/revenue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Money in and money back, per currency
+         * @description Per currency, never summed across them.
+         *
+         *     This system stores no exchange rate, so a combined total would be a number
+         *     with no unit. A caller who needs one figure has to bring the rate that
+         *     makes it true.
+         */
+        get: operations["revenue_api_v1_admin_revenue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/support-access": {
         parameters: {
             query?: never;
@@ -2135,6 +2718,26 @@ export interface components {
          * @enum {string}
          */
         AdminRole: "support" | "ops" | "admin";
+        /**
+         * AdvisoryOut
+         * @description Where this plan sits outside the evidence behind its own model.
+         *
+         *     Distinct from ``assumed_fields``, which is about inputs the athlete did not
+         *     supply. Every input can be present and the answer still rest on ground the
+         *     data does not cover — a heat decrement applied over a leg far longer than
+         *     the hour it was measured over, a curve held flat above its top knot.
+         *
+         *     Says which numbers are soft, and never by how much: there is no correction
+         *     term to quote, and quoting one would be inventing it.
+         */
+        AdvisoryOut: {
+            /** Key */
+            key: string;
+            /** Tag */
+            tag: string;
+            /** Text */
+            text: string;
+        };
         /** AffectedPlanOut */
         AffectedPlanOut: {
             /**
@@ -2396,6 +2999,15 @@ export interface components {
             /** Withheld Reason */
             withheld_reason?: string | null;
         };
+        /** Body_upload_branding_logo_api_v1_coach_branding_logo_put */
+        Body_upload_branding_logo_api_v1_coach_branding_logo_put: {
+            /**
+             * File
+             * Format: binary
+             * @description A PNG, JPEG or WebP
+             */
+            file: string;
+        };
         /** Body_upload_file_api_v1_post_race_files_post */
         Body_upload_file_api_v1_post_race_files_post: {
             /**
@@ -2415,6 +3027,47 @@ export interface components {
              * @description A GPX file for this leg
              */
             file: string;
+        };
+        /**
+         * BrandingOut
+         * @description A coach's mark, as configured. Never the logo bytes.
+         */
+        BrandingOut: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Accent Hex */
+            accent_hex?: string | null;
+            /** Footer Note */
+            footer_note?: string | null;
+            /**
+             * Has Logo
+             * @default false
+             */
+            has_logo: boolean;
+            /**
+             * Effective Accent Hex
+             * @default
+             */
+            effective_accent_hex: string;
+        };
+        /**
+         * BrandingUpdate
+         * @description Absent means unchanged. Explicitly clearing the accent is its own flag,
+         *     because `null` and "leave it alone" are different intentions and a single
+         *     nullable field cannot carry both.
+         */
+        BrandingUpdate: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Accent Hex */
+            accent_hex?: string | null;
+            /** Footer Note */
+            footer_note?: string | null;
+            /**
+             * Clear Accent
+             * @default false
+             */
+            clear_accent: boolean;
         };
         /**
          * BundleDetail
@@ -2618,6 +3271,91 @@ export interface components {
          * @enum {string}
          */
         CompareState: "good" | "ok" | "warn" | "bad";
+        /**
+         * ConditionsHistoryOut
+         * @description What race day has actually been like here.
+         *
+         *     **There is no finish-time distribution.** It needs real results, which this
+         *     system does not have and cannot obtain, so the field is absent rather than
+         *     drawn — `finish_times_available` says so in as many words, so a client does
+         *     not have to infer it from a missing key.
+         */
+        ConditionsHistoryOut: {
+            /** Course Slug */
+            course_slug: string;
+            /** Course Name */
+            course_name: string;
+            summary: components["schemas"]["ConditionsSummaryOut"];
+            /** Observations */
+            observations?: components["schemas"]["ConditionsObservationOut"][];
+            /**
+             * Finish Times Available
+             * @default false
+             */
+            finish_times_available: boolean;
+            /** Empty Reason */
+            empty_reason?: string | null;
+        };
+        /**
+         * ConditionsObservationOut
+         * @description One past edition's race-morning weather, as the archive recorded it.
+         */
+        ConditionsObservationOut: {
+            /**
+             * Observed On
+             * Format: date
+             */
+            observed_on: string;
+            /** Observed Hour */
+            observed_hour: number;
+            /** Air Temp C */
+            air_temp_c: number;
+            /** Humidity Pct */
+            humidity_pct: number;
+            /** Wind Speed Ms */
+            wind_speed_ms: number;
+            /** Wind Dir Deg */
+            wind_dir_deg?: number | null;
+            /** Precipitation Mm */
+            precipitation_mm?: number | null;
+            /** Cloud Cover Pct */
+            cloud_cover_pct?: number | null;
+            /** Water Temp C */
+            water_temp_c?: number | null;
+        };
+        /**
+         * ConditionsSummaryOut
+         * @description Medians, and the count they rest on.
+         *
+         *     The count travels with every figure deliberately: a median of two years is
+         *     a different claim from a median of ten, and a panel showing the number
+         *     without it makes them look the same.
+         */
+        ConditionsSummaryOut: {
+            /** Observations */
+            observations: number;
+            /** Median Air Temp C */
+            median_air_temp_c?: number | null;
+            /** Median Humidity Pct */
+            median_humidity_pct?: number | null;
+            /** Median Wind Speed Ms */
+            median_wind_speed_ms?: number | null;
+            /** Warmest Air Temp C */
+            warmest_air_temp_c?: number | null;
+            /** Coolest Air Temp C */
+            coolest_air_temp_c?: number | null;
+            /**
+             * Water Observations
+             * @default 0
+             */
+            water_observations: number;
+            /** Median Water Temp C */
+            median_water_temp_c?: number | null;
+            /** Wetsuit Legal Fraction */
+            wetsuit_legal_fraction?: number | null;
+            /** Wet Start Fraction */
+            wet_start_fraction?: number | null;
+        };
         /** ConstraintHistoryOut */
         ConstraintHistoryOut: {
             /**
@@ -2683,6 +3421,24 @@ export interface components {
              */
             stale: boolean;
         };
+        /** ConstraintPointOut */
+        ConstraintPointOut: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: number;
+            /** Unit */
+            unit: string;
+            /** Source */
+            source: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Change Reason */
+            change_reason?: string | null;
+        };
         /**
          * ConstraintRefOut
          * @description The "Why this?" drawer. A solved-time snapshot, not a live join.
@@ -2718,7 +3474,18 @@ export interface components {
          *     byte-identical numeric output.
          * @enum {string}
          */
-        ConstraintSource: "measured" | "tested" | "manual" | "estimated";
+        ConstraintSource: "measured" | "tested" | "manual" | "estimated" | "imported";
+        /** ConstraintTrackOut */
+        ConstraintTrackOut: {
+            /** Key */
+            key: string;
+            /** Unit */
+            unit: string;
+            /** Points */
+            points?: components["schemas"]["ConstraintPointOut"][];
+            /** Change */
+            change?: number | null;
+        };
         /** ConstraintWrite */
         ConstraintWrite: {
             /** Value */
@@ -2830,6 +3597,32 @@ export interface components {
          * @enum {string}
          */
         CrowdStatus: "pending" | "promoted" | "held" | "rejected";
+        /** CurationRequest */
+        CurationRequest: {
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * CurationStatus
+         * @description Whether an athlete-submitted course has been reviewed into the catalogue.
+         *
+         *     A submitted course is usable by the athlete who submitted it from the
+         *     moment it builds — they added it to race it, and making them wait on a
+         *     queue to plan their own race would be a worse product for no safety gain,
+         *     because they are the only one who can see it.
+         *
+         *     What review decides is the *other* direction: whether everyone else sees
+         *     it too. The catalogue is the set of courses this system says are surveyed,
+         *     and that claim is the product. One unchecked GPX trace promoted into it
+         *     quietly makes every other row less trustworthy, because a reader cannot
+         *     tell which kind of row they are looking at.
+         *
+         *     ``REJECTED`` does not delete anything or take the course away from its
+         *     submitter. It records that it was looked at and not published, with a
+         *     reason, so the next reviewer does not start again from nothing.
+         * @enum {string}
+         */
+        CurationStatus: "unreviewed" | "published" | "rejected";
         /**
          * Currency
          * @enum {string}
@@ -2970,6 +3763,48 @@ export interface components {
              */
             purchasable_per_race: boolean;
         };
+        /**
+         * ErasureImpactOut
+         * @description What deleting this account would destroy, in this account's own numbers.
+         *
+         *     Returned before the deletion so the confirmation screen states facts rather
+         *     than a generic warning — "4 plans and 2 invoices" is a different decision
+         *     from "0 and 0".
+         */
+        ErasureImpactOut: {
+            /** Plans */
+            plans: number;
+            /** Races */
+            races: number;
+            /** Invoices */
+            invoices: number;
+            /** Active Subscription */
+            active_subscription: boolean;
+            /** Coach Links */
+            coach_links: number;
+        };
+        /**
+         * ErasureRequest
+         * @description A typed confirmation, not a boolean.
+         *
+         *     A boolean can be sent by a mis-wired client. This cannot be undone, so the
+         *     caller has to send back the exact words.
+         */
+        ErasureRequest: {
+            /**
+             * Confirmation
+             * @description Must be exactly 'DELETE MY ACCOUNT'
+             */
+            confirmation: string;
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * ErrorCode
+         * @description Machine-readable classification. The frontend maps these to its copy.
+         * @enum {string}
+         */
+        ErrorCode: "INVALID_INPUT" | "INFEASIBLE" | "OVER_CEILING" | "UPLOAD_FAILED" | "STALE_DATA" | "PARTIAL_DATA" | "FREEZE_WINDOW" | "FORBIDDEN_STRUCTURAL" | "UNAUTHENTICATED" | "FORBIDDEN" | "PAYMENT_REQUIRED" | "NOT_FOUND" | "CONFLICT" | "SOLVER_TIMEOUT" | "RATE_LIMITED" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE";
         /** EstimateOut */
         EstimateOut: {
             /** Key */
@@ -2998,6 +3833,49 @@ export interface components {
          * @enum {string}
          */
         Feasibility: "CLEAR" | "TIGHT" | "STALE" | "NOT_SOLVED";
+        /**
+         * ForecastOut
+         * @description The forecast for a race's start hour, as it stands right now.
+         *
+         *     Deliberately **not** the plan's ``forecast_snapshot``. That one is frozen
+         *     at solve time and must stay frozen — Law 3 says a plan's numbers do not
+         *     change under the athlete. This is the live reading beside it, so the
+         *     difference between the two is visible and the athlete can decide whether
+         *     to re-solve.
+         *
+         *     ``available`` is false rather than the response being a 404, because "no
+         *     forecast" is an ordinary, expected state with several ordinary causes, and
+         *     each of them wants different words on the screen. A 404 would say the race
+         *     does not exist.
+         */
+        ForecastOut: {
+            /** Available */
+            available: boolean;
+            /** Unavailable Reason */
+            unavailable_reason?: string | null;
+            /** Days Away */
+            days_away?: number | null;
+            /** Horizon Hours */
+            horizon_hours?: number | null;
+            /** Temp C */
+            temp_c?: number | null;
+            /** Humidity */
+            humidity?: number | null;
+            /** Wind Speed Ms */
+            wind_speed_ms?: number | null;
+            /** Wind Dir Deg */
+            wind_dir_deg?: number | null;
+            /** Conditions */
+            conditions?: string | null;
+            /** Water Temp C */
+            water_temp_c?: number | null;
+            /** Pressure Hpa */
+            pressure_hpa?: number | null;
+            /** Cloud Cover Pct */
+            cloud_cover_pct?: number | null;
+            /** For Local Time */
+            for_local_time?: string | null;
+        };
         /** ForgotPasswordRequest */
         ForgotPasswordRequest: {
             /**
@@ -3052,6 +3930,40 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HelpArticleOut */
+        HelpArticleOut: {
+            /** Slug */
+            slug: string;
+            /** Category */
+            category: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Read Minutes */
+            read_minutes: number;
+            /** Body */
+            body: string;
+        };
+        /**
+         * HelpArticleSummary
+         * @description A card or a search hit. Deliberately without the body.
+         *
+         *     The list endpoint returns every article, and sending eight full bodies to
+         *     render eight cards would be most of a page of prose nobody asked for.
+         */
+        HelpArticleSummary: {
+            /** Slug */
+            slug: string;
+            /** Category */
+            category: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Read Minutes */
+            read_minutes: number;
         };
         /** IncidentRequest */
         IncidentRequest: {
@@ -3239,9 +4151,14 @@ export interface components {
         NotificationSeverity: "info" | "ok" | "warn" | "bad";
         /**
          * NotificationType
+         * @description Every kind of thing the system tells an athlete about.
+         *
+         *     Each one corresponds to an event the code actually produces. There is no
+         *     entry here for something a job might emit one day: an unreachable type
+         *     shows up in the preferences screen as a switch that governs nothing.
          * @enum {string}
          */
-        NotificationType: "drift" | "week" | "cutoff" | "bundle" | "analysis" | "digest";
+        NotificationType: "drift" | "week" | "cutoff" | "bundle" | "analysis" | "digest" | "plan_ready" | "coach_shared" | "athlete_accepted" | "payment_succeeded" | "payment_failed" | "subscription_renewing" | "support_access" | "course_reviewed";
         /** OverrideRequest */
         OverrideRequest: {
             /** Constraint Key */
@@ -3302,6 +4219,14 @@ export interface components {
             projected_minutes: number | null;
             /** Projected Label */
             projected_label?: string | null;
+            /** T1 Minutes */
+            t1_minutes?: number | null;
+            /** T2 Minutes */
+            t2_minutes?: number | null;
+            /** T1 Label */
+            t1_label?: string | null;
+            /** T2 Label */
+            t2_label?: string | null;
             feasibility: components["schemas"]["Feasibility"];
             /** Worst Margin Minutes */
             worst_margin_minutes: number | null;
@@ -3348,6 +4273,10 @@ export interface components {
             constraint_refs?: components["schemas"]["ConstraintRefOut"][];
             /** Forecast Snapshot */
             forecast_snapshot?: Record<string, never>;
+            /** Warnings */
+            warnings?: components["schemas"]["ResponseWarningOut"][];
+            /** Advisories */
+            advisories?: components["schemas"]["AdvisoryOut"][];
         };
         /**
          * PlanDraftPatch
@@ -3390,6 +4319,14 @@ export interface components {
             projected_minutes: number | null;
             /** Projected Label */
             projected_label?: string | null;
+            /** T1 Minutes */
+            t1_minutes?: number | null;
+            /** T2 Minutes */
+            t2_minutes?: number | null;
+            /** T1 Label */
+            t1_label?: string | null;
+            /** T2 Label */
+            t2_label?: string | null;
             feasibility: components["schemas"]["Feasibility"];
             /** Worst Margin Minutes */
             worst_margin_minutes: number | null;
@@ -3618,6 +4555,16 @@ export interface components {
             plan_version?: number | null;
             /** Plan Status */
             plan_status: string;
+            /**
+             * Display Status
+             * @default none
+             */
+            display_status: string;
+            /**
+             * Purchased
+             * @default false
+             */
+            purchased: boolean;
             /** Feasibility */
             feasibility: string;
             /** Goal Minutes */
@@ -3783,6 +4730,73 @@ export interface components {
             bib?: string | null;
             status?: components["schemas"]["RaceStatus"] | null;
         };
+        /**
+         * RaceWeekOut
+         * @description The checklist, and whether it is worth showing yet.
+         */
+        RaceWeekOut: {
+            /**
+             * Race Id
+             * Format: uuid
+             */
+            race_id: string;
+            /**
+             * Event Date
+             * Format: date
+             */
+            event_date: string;
+            /** Visible */
+            visible: boolean;
+            /** Tasks */
+            tasks?: components["schemas"]["RaceWeekTaskOut"][];
+            /**
+             * Remaining
+             * @default 0
+             */
+            remaining: number;
+        };
+        /** RaceWeekTaskCreate */
+        RaceWeekTaskCreate: {
+            /** Title */
+            title: string;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /** Description */
+            description?: string | null;
+        };
+        /** RaceWeekTaskOut */
+        RaceWeekTaskOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /** Generated */
+            generated: boolean;
+            /** Completed At */
+            completed_at?: string | null;
+            /** Days Away */
+            days_away?: number | null;
+        };
+        /** RaceWeekTaskPatch */
+        RaceWeekTaskPatch: {
+            /** Completed */
+            completed: boolean;
+        };
         /** RefundOut */
         RefundOut: {
             /**
@@ -3814,6 +4828,11 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** RejectionRequest */
+        RejectionRequest: {
+            /** Note */
+            note: string;
+        };
         /** ResetPasswordRequest */
         ResetPasswordRequest: {
             /** Token */
@@ -3824,6 +4843,26 @@ export interface components {
         /** ResolveRequest */
         ResolveRequest: {
             status: components["schemas"]["CrowdStatus"];
+        };
+        /**
+         * ResponseWarningOut
+         * @description A non-blocking caveat riding alongside a successful response.
+         *
+         *     The distinction from an error is load-bearing and is why this exists as a
+         *     field rather than as a status code: an error *replaces* the response, a
+         *     warning *accompanies* it. A plan built on a six-month-old FTP is still a
+         *     plan, and refusing to return it would serve the athlete worse than
+         *     returning it with the caveat attached.
+         *
+         *     Only the codes in :data:`~raceos.api.errors.WARNING_CODES` can appear here;
+         *     :meth:`~raceos.api.errors.WarningCollector.add` refuses anything else.
+         */
+        ResponseWarningOut: {
+            code: components["schemas"]["ErrorCode"];
+            /** Message */
+            message: string;
+            /** Field */
+            field?: string | null;
         };
         /**
          * RiskLevel
@@ -3840,6 +4879,92 @@ export interface components {
             role: components["schemas"]["AdminRole"];
             /** Granted */
             granted: boolean;
+        };
+        /**
+         * SearchHitOut
+         * @description One result.
+         *
+         *     ``ref`` is what the client needs to build a link — a course slug, a race or
+         *     plan id, a help slug — rather than a URL. The frontend owns its route
+         *     table; a server emitting ``/plan?plan=`` would be a second copy of it, and
+         *     silently wrong the day a path changes.
+         */
+        SearchHitOut: {
+            /** Kind */
+            kind: string;
+            /** Ref */
+            ref: string;
+            /** Title */
+            title: string;
+            /** Subtitle */
+            subtitle: string;
+        };
+        /**
+         * SeasonHistoryOut
+         * @description A season at a glance, and how the athlete moved across it.
+         */
+        SeasonHistoryOut: {
+            /** Seasons */
+            seasons?: components["schemas"]["SeasonOut"][];
+            /** Constraints */
+            constraints?: components["schemas"]["ConstraintTrackOut"][];
+        };
+        /** SeasonOut */
+        SeasonOut: {
+            /** Season */
+            season: number;
+            /** Label */
+            label: string;
+            /** Planned Count */
+            planned_count: number;
+            /** Raced Count */
+            raced_count: number;
+            /** Races */
+            races?: components["schemas"]["SeasonRaceOut"][];
+        };
+        /** SeasonRaceOut */
+        SeasonRaceOut: {
+            /**
+             * Race Id
+             * Format: uuid
+             */
+            race_id: string;
+            /** Course Name */
+            course_name: string;
+            /** Course Place */
+            course_place: string;
+            /** Course Slug */
+            course_slug: string;
+            /** Distance Type */
+            distance_type: string;
+            /**
+             * Event Date
+             * Format: date
+             */
+            event_date: string;
+            /** Race Status */
+            race_status: string;
+            /** Plan Id */
+            plan_id?: string | null;
+            /** Plan Version */
+            plan_version?: number | null;
+            /** Goal Minutes */
+            goal_minutes?: number | null;
+            /** Projected Minutes */
+            projected_minutes?: number | null;
+            /** Actual Minutes */
+            actual_minutes?: number | null;
+            /**
+             * Has Analysis
+             * @default false
+             */
+            has_analysis: boolean;
+            /** Goal Label */
+            goal_label?: string | null;
+            /** Projected Label */
+            projected_label?: string | null;
+            /** Actual Label */
+            actual_label?: string | null;
         };
         /** SegmentOut */
         SegmentOut: {
@@ -4137,6 +5262,50 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /**
+         * SubscribeRequest
+         * @description Which recurring tier to buy.
+         *
+         *     No currency: a subscription is billed against a provider price id, and
+         *     that id already fixes the currency. Accepting one here would let a client
+         *     ask for euros and be charged in pounds, with the response quoting the
+         *     figure it asked for.
+         */
+        SubscribeRequest: {
+            tier: components["schemas"]["UserTier"];
+        };
+        /**
+         * SubscribeResponse
+         * @description The agreement, plus what the client needs to confirm a payment method.
+         *
+         *     ``client_secret`` is returned once, never stored and never logged. It is
+         *     absent when the provider needed no confirmation — a returning customer
+         *     with a card on file — and that absence is a success, not a failure.
+         */
+        SubscribeResponse: {
+            subscription: components["schemas"]["SubscriptionOut"];
+            /** Client Secret */
+            client_secret?: string | null;
+        };
+        /** SubscriptionOut */
+        SubscriptionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            tier: components["schemas"]["UserTier"];
+            status: components["schemas"]["SubscriptionStatus"];
+            /** Renews At */
+            renews_at?: string | null;
+            /** Cancel At */
+            cancel_at?: string | null;
+        };
+        /**
+         * SubscriptionStatus
+         * @enum {string}
+         */
+        SubscriptionStatus: "active" | "cancelled" | "past_due";
         /** SupportRequest */
         SupportRequest: {
             /**
@@ -4587,6 +5756,41 @@ export interface operations {
             };
         };
     };
+    erase_me_api_v1_auth_me_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ErasureRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErasureImpactOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_me_api_v1_auth_me_patch: {
         parameters: {
             query?: never;
@@ -4609,6 +5813,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    erasure_impact_api_v1_auth_me_erasure_impact_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErasureImpactOut"];
                 };
             };
             /** @description Validation Error */
@@ -4711,6 +5946,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BundleDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_conditions_history_api_v1_courses__course_ref__conditions_history_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                course_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConditionsHistoryOut"];
                 };
             };
             /** @description Validation Error */
@@ -5082,6 +6350,126 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SubmissionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_api_v1_search_get: {
+        parameters: {
+            query?: {
+                /** @description At least two characters */
+                q?: string;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchHitOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_articles_api_v1_help_get: {
+        parameters: {
+            query?: {
+                /** @description Match title, summary and body */
+                q?: string | null;
+                /** @description One of the published categories */
+                category?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HelpArticleSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_categories_api_v1_help_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    get_article_api_v1_help__slug__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HelpArticleOut"];
                 };
             };
             /** @description Validation Error */
@@ -5779,6 +7167,177 @@ export interface operations {
             };
         };
     };
+    get_race_forecast_api_v1_races__race_id__forecast_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                race_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForecastOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_race_week_api_v1_races__race_id__race_week_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                race_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RaceWeekOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_race_week_task_api_v1_races__race_id__race_week_tasks_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                race_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RaceWeekTaskCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RaceWeekTaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_race_week_task_api_v1_races_race_week_tasks__task_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_race_week_task_api_v1_races_race_week_tasks__task_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RaceWeekTaskPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RaceWeekTaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_exports_api_v1_plans__plan_id__export_get: {
         parameters: {
             query?: never;
@@ -5814,7 +7373,10 @@ export interface operations {
     };
     export_race_card_api_v1_plans__plan_id__export_race_card_pdf_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Render with the coach's branding, where this plan was built by one who has set any. Requires the coach tier. */
+                branded?: boolean;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -5845,7 +7407,10 @@ export interface operations {
     };
     export_bag_manifests_api_v1_plans__plan_id__export_bags_pdf_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Render with the coach's branding, as above. */
+                branded?: boolean;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -6098,6 +7663,139 @@ export interface operations {
             };
         };
     };
+    list_subscriptions_api_v1_subscriptions_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subscribe_api_v1_subscriptions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscribeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscribeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_subscription_api_v1_subscriptions__subscription_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                subscription_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_subscription_api_v1_subscriptions__subscription_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                subscription_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_invoices_api_v1_invoices_get: {
         parameters: {
             query?: never;
@@ -6244,6 +7942,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MyPlansOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_season_history_api_v1_season_history_get: {
+        parameters: {
+            query?: {
+                /** @description Only constraint changes from this date onward */
+                since?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeasonHistoryOut"];
                 };
             };
             /** @description Validation Error */
@@ -6918,6 +8650,167 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalibrationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_branding_api_v1_coach_branding_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_branding_api_v1_coach_branding_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_branding_logo_api_v1_coach_branding_logo_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_branding_logo_api_v1_coach_branding_logo_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_branding_logo_api_v1_coach_branding_logo_put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_branding_logo_api_v1_coach_branding_logo_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingOut"];
                 };
             };
             /** @description Validation Error */
@@ -8026,6 +9919,219 @@ export interface operations {
                 "application/json": components["schemas"]["RoleRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_api_v1_admin_users_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                tier?: components["schemas"]["UserTier"] | null;
+                role?: components["schemas"]["AdminRole"] | null;
+                state?: components["schemas"]["AccountState"] | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_api_v1_admin_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submitted_courses_api_v1_admin_courses_submitted_get: {
+        parameters: {
+            query?: {
+                curation_status?: components["schemas"]["CurationStatus"] | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_course_api_v1_admin_courses__course_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CurationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_course_api_v1_admin_courses__course_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revenue_api_v1_admin_revenue_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

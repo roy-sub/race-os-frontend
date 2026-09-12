@@ -12,7 +12,7 @@
  * payload and the admin reads refuse anyone without the role.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { client, unwrap } from "./client";
 import { queryKeys } from "./queryKeys";
 import type { components } from "./schema";
@@ -159,6 +159,240 @@ export function useKpis(days = 30, enabled = true) {
       (await unwrap(
         client.GET("/api/v1/admin/kpis", { params: { query: { days } } }),
       )) as unknown as KpiRow[],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Revenue and churn
+// ---------------------------------------------------------------------------
+
+/**
+ * Money is reported **per currency and never summed**.
+ *
+ * The backend stores no exchange rate, so there is no honest single total to
+ * show and this type deliberately offers none. A screen that wants one figure
+ * has to pick a currency; it cannot add GBP to EUR by accident because there
+ * is no field to add.
+ */
+export type CurrencyRevenue = {
+  currency: string;
+  invoiced_cents: number;
+  refunded_cents: number;
+  net_cents: number;
+  invoice_count: number;
+  refund_count: number;
+};
+
+export type Churn = {
+  window_days: number;
+  subscriptions_at_risk: number;
+  subscriptions_lost: number;
+  /** Null when nothing could churn. Undefined, not zero — never render 0%. */
+  churn_pct: number | null;
+  lost_by_tier: Record<string, number>;
+  active_now: number;
+};
+
+export type RevenuePayload = {
+  window_days: number;
+  note: string;
+  currencies: CurrencyRevenue[];
+  churn: Churn;
+};
+
+export function useRevenue(days = 30, enabled = true) {
+  return useQuery<RevenuePayload>({
+    queryKey: queryKeys.admin.revenue(days),
+    enabled,
+    queryFn: async () =>
+      (await unwrap(
+        client.GET("/api/v1/admin/revenue", { params: { query: { days } } }),
+      )) as unknown as RevenuePayload,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Accounts
+// ---------------------------------------------------------------------------
+
+/**
+ * What the account-administration screen may know.
+ *
+ * There is no plan, race, constraint or physiology field here, and that is the
+ * point rather than an omission: athlete content is reachable only through a
+ * support-access grant the athlete approved, and every read of it is logged
+ * back to them. This screen needs no consent to open, so it must not carry
+ * anything that does.
+ */
+export type AccountRow = {
+  id: string;
+  email: string;
+  name: string | null;
+  tier: string;
+  account_state: string;
+  is_coach: boolean;
+  email_verified: boolean;
+  roles: string[];
+  created_at: string;
+  subscription_status: string | null;
+};
+
+export type AccountPage = {
+  /** Everything matching, not what fits on the page. */
+  total: number;
+  limit: number;
+  offset: number;
+  results: AccountRow[];
+};
+
+export type AccountDetail = AccountRow & {
+  subscriptions: {
+    id: string;
+    tier: string;
+    status: string;
+    renews_at: string | null;
+    cancel_at: string | null;
+  }[];
+  invoiced: { currency: string; amount_cents: number; count: number }[];
+  plan_count: number;
+  support_grant_count: number;
+  /** The server's own sentence about what is deliberately not here. */
+  athlete_data: string;
+};
+
+export type AdminRole = components["schemas"]["AdminRole"];
+export type AccountState = components["schemas"]["AccountState"];
+export type CurationStatus = components["schemas"]["CurationStatus"];
+export type AccountTier = components["schemas"]["UserTier"];
+
+export type AccountQuery = {
+  q?: string | null;
+  tier?: AccountTier | null;
+  role?: AdminRole | null;
+  state?: AccountState | null;
+  limit?: number;
+  offset?: number;
+};
+
+export function useAccounts(params: AccountQuery, enabled = true) {
+  return useQuery<AccountPage>({
+    queryKey: queryKeys.admin.users(params),
+    enabled,
+    queryFn: async () =>
+      (await unwrap(
+        client.GET("/api/v1/admin/users", {
+          params: {
+            query: {
+              q: params.q || undefined,
+              tier: params.tier || undefined,
+              role: params.role || undefined,
+              state: params.state || undefined,
+              limit: params.limit,
+              offset: params.offset,
+            },
+          },
+        }),
+      )) as unknown as AccountPage,
+  });
+}
+
+export function useAccount(userId: string | null) {
+  return useQuery<AccountDetail>({
+    queryKey: queryKeys.admin.user(userId ?? ""),
+    enabled: Boolean(userId),
+    queryFn: async () =>
+      (await unwrap(
+        client.GET("/api/v1/admin/users/{user_id}", {
+          params: { path: { user_id: userId as string } },
+        }),
+      )) as unknown as AccountDetail,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Course curation
+// ---------------------------------------------------------------------------
+
+/**
+ * A course an athlete submitted, awaiting or having had a decision.
+ *
+ * Publishing lists it to everyone; rejecting takes nothing away — it stays
+ * usable by the athlete who added it, with a reason attached. Neither action
+ * removes the submitter from the row, so a published course still reports
+ * `is_user_submitted` in the directory.
+ */
+export type CurationRow = {
+  course_id: string;
+  slug: string;
+  name: string;
+  place: string | null;
+  distance_type: string;
+  event_date: string | null;
+  submitted_by: string;
+  submitted_by_email: string;
+  submitted_at: string;
+  curation_status: string;
+  curation_note: string | null;
+  curated_at: string | null;
+  /** How many of the three legs built. Less than 3 is an incomplete course. */
+  leg_count: number;
+};
+
+export type CurationPage = {
+  total: number;
+  limit: number;
+  offset: number;
+  results: CurationRow[];
+};
+
+export function useCurationQueue(
+  status: CurationStatus | null = "unreviewed",
+  enabled = true,
+) {
+  return useQuery<CurationPage>({
+    queryKey: queryKeys.admin.curation(status),
+    enabled,
+    queryFn: async () =>
+      (await unwrap(
+        client.GET("/api/v1/admin/courses/submitted", {
+          params: { query: { curation_status: status || undefined } },
+        }),
+      )) as unknown as CurationPage,
+  });
+}
+
+export function usePublishCourse() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ courseId, note }: { courseId: string; note?: string }) =>
+      unwrap(
+        client.POST("/api/v1/admin/courses/{course_id}/publish", {
+          params: { path: { course_id: courseId } },
+          body: { note: note || null },
+        }),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.admin.all });
+      // The directory changed for everyone, not just this screen.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.courses.all });
+    },
+  });
+}
+
+export function useRejectCourse() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ courseId, note }: { courseId: string; note: string }) =>
+      unwrap(
+        client.POST("/api/v1/admin/courses/{course_id}/reject", {
+          params: { path: { course_id: courseId } },
+          body: { note },
+        }),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.admin.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.courses.all });
+    },
   });
 }
 
