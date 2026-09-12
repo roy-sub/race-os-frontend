@@ -1482,6 +1482,226 @@
         }
       }
     },
+    "/api/v1/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search races, plans, courses and help",
+        "description": "Public, and scoped to the asker.\n\nA signed-out visitor gets courses and help; a signed-in athlete also gets\ntheir own races and plans, filtered by owner in SQL rather than after the\nfact. Courses reuse the directory's own visibility filter, so a search\ncannot surface a row the directory would not list.\n\nA query under two characters returns nothing rather than most of the\nlibrary: it is almost always a keystroke on the way to a real one.",
+        "operationId": "search_api_v1_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "At least two characters",
+              "default": "",
+              "title": "Q"
+            },
+            "description": "At least two characters"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SearchHitOut"
+                  },
+                  "title": "Response Search Api V1 Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/help": {
+      "get": {
+        "tags": [
+          "help"
+        ],
+        "summary": "Every help article",
+        "description": "Grouped by category in reading order, not alphabetically.\n\n\"Getting started\" before \"Billing\" is the whole point of having an order.",
+        "operationId": "list_articles_api_v1_help_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Match title, summary and body",
+              "title": "Q"
+            },
+            "description": "Match title, summary and body"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One of the published categories",
+              "title": "Category"
+            },
+            "description": "One of the published categories"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HelpArticleSummary"
+                  },
+                  "title": "Response List Articles Api V1 Help Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/help/categories": {
+      "get": {
+        "tags": [
+          "help"
+        ],
+        "summary": "The published categories, in reading order",
+        "operationId": "list_categories_api_v1_help_categories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "title": "Response List Categories Api V1 Help Categories Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/help/{slug}": {
+      "get": {
+        "tags": [
+          "help"
+        ],
+        "summary": "One article in full",
+        "operationId": "get_article_api_v1_help__slug__get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelpArticleOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/constraints": {
       "get": {
         "tags": [
@@ -10112,6 +10332,78 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HelpArticleOut": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "read_minutes": {
+            "type": "integer",
+            "title": "Read Minutes"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slug",
+          "category",
+          "title",
+          "summary",
+          "read_minutes",
+          "body"
+        ],
+        "title": "HelpArticleOut"
+      },
+      "HelpArticleSummary": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "read_minutes": {
+            "type": "integer",
+            "title": "Read Minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slug",
+          "category",
+          "title",
+          "summary",
+          "read_minutes"
+        ],
+        "title": "HelpArticleSummary",
+        "description": "A card or a search hit. Deliberately without the body.\n\nThe list endpoint returns every article, and sending eight full bodies to\nrender eight cards would be most of a page of prose nobody asked for."
+      },
       "IncidentRequest": {
         "properties": {
           "severity": {
@@ -12523,6 +12815,35 @@
           "granted"
         ],
         "title": "RoleRequest"
+      },
+      "SearchHitOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "subtitle": {
+            "type": "string",
+            "title": "Subtitle"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "ref",
+          "title",
+          "subtitle"
+        ],
+        "title": "SearchHitOut",
+        "description": "One result.\n\n``ref`` is what the client needs to build a link \u2014 a course slug, a race or\nplan id, a help slug \u2014 rather than a URL. The frontend owns its route\ntable; a server emitting ``/plan?plan=`` would be a second copy of it, and\nsilently wrong the day a path changes."
       },
       "SegmentOut": {
         "properties": {

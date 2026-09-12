@@ -490,6 +490,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search races, plans, courses and help
+         * @description Public, and scoped to the asker.
+         *
+         *     A signed-out visitor gets courses and help; a signed-in athlete also gets
+         *     their own races and plans, filtered by owner in SQL rather than after the
+         *     fact. Courses reuse the directory's own visibility filter, so a search
+         *     cannot surface a row the directory would not list.
+         *
+         *     A query under two characters returns nothing rather than most of the
+         *     library: it is almost always a keystroke on the way to a real one.
+         */
+        get: operations["search_api_v1_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/help": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every help article
+         * @description Grouped by category in reading order, not alphabetically.
+         *
+         *     "Getting started" before "Billing" is the whole point of having an order.
+         */
+        get: operations["list_articles_api_v1_help_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/help/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The published categories, in reading order */
+        get: operations["list_categories_api_v1_help_categories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/help/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One article in full */
+        get: operations["get_article_api_v1_help__slug__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/constraints": {
         parameters: {
             query?: never;
@@ -3237,6 +3321,40 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HelpArticleOut */
+        HelpArticleOut: {
+            /** Slug */
+            slug: string;
+            /** Category */
+            category: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Read Minutes */
+            read_minutes: number;
+            /** Body */
+            body: string;
+        };
+        /**
+         * HelpArticleSummary
+         * @description A card or a search hit. Deliberately without the body.
+         *
+         *     The list endpoint returns every article, and sending eight full bodies to
+         *     render eight cards would be most of a page of prose nobody asked for.
+         */
+        HelpArticleSummary: {
+            /** Slug */
+            slug: string;
+            /** Category */
+            category: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Read Minutes */
+            read_minutes: number;
+        };
         /** IncidentRequest */
         IncidentRequest: {
             severity: components["schemas"]["IncidentSeverity"];
@@ -4062,6 +4180,25 @@ export interface components {
             role: components["schemas"]["AdminRole"];
             /** Granted */
             granted: boolean;
+        };
+        /**
+         * SearchHitOut
+         * @description One result.
+         *
+         *     ``ref`` is what the client needs to build a link — a course slug, a race or
+         *     plan id, a help slug — rather than a URL. The frontend owns its route
+         *     table; a server emitting ``/plan?plan=`` would be a second copy of it, and
+         *     silently wrong the day a path changes.
+         */
+        SearchHitOut: {
+            /** Kind */
+            kind: string;
+            /** Ref */
+            ref: string;
+            /** Title */
+            title: string;
+            /** Subtitle */
+            subtitle: string;
         };
         /** SegmentOut */
         SegmentOut: {
@@ -5348,6 +5485,126 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SubmissionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_api_v1_search_get: {
+        parameters: {
+            query?: {
+                /** @description At least two characters */
+                q?: string;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchHitOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_articles_api_v1_help_get: {
+        parameters: {
+            query?: {
+                /** @description Match title, summary and body */
+                q?: string | null;
+                /** @description One of the published categories */
+                category?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HelpArticleSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_categories_api_v1_help_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    get_article_api_v1_help__slug__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HelpArticleOut"];
                 };
             };
             /** @description Validation Error */

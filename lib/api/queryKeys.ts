@@ -72,6 +72,15 @@ export const queryKeys = {
     health: () => [...queryKeys.admin.all, "health"] as const,
     incidents: () => [...queryKeys.admin.all, "incidents"] as const,
   },
+  help: {
+    all: ["help"] as const,
+    list: () => [...queryKeys.help.all, "list"] as const,
+    article: (slug: string) => [...queryKeys.help.all, "article", slug] as const,
+  },
+  search: {
+    all: ["search"] as const,
+    query: (q: string) => [...queryKeys.search.all, q] as const,
+  },
   shared: {
     all: ["shared"] as const,
     plan: (token: string) => [...queryKeys.shared.all, "plan", token] as const,
