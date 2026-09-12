@@ -6,6 +6,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { Footer } from "@/components/Footer";
 import { Reveal } from "@/components/Reveal";
 import { routes } from "@/lib/routes";
+import { useAuth } from "@/lib/auth/AuthProvider";
 import {
   CURRENCY_SYMBOL,
   ENTRY_COST,
@@ -21,6 +22,7 @@ const TIERS = [
   {
     kicker: "FREE",
     name: "Course Recon",
+    tierKey: "recon" as const,
     priceKey: null,
     unit: "FOREVER",
     desc: "Understand a course before you commit to it.",
@@ -38,6 +40,7 @@ const TIERS = [
   {
     kicker: "PER RACE",
     name: "Race Plan",
+    tierKey: "race_plan" as const,
     priceKey: "p19" as const,
     unit: "ONE-TIME, PER RACE",
     desc: "One complete plan, kept permanently.",
@@ -55,6 +58,7 @@ const TIERS = [
   {
     kicker: "ANNUAL",
     name: "Season Pass",
+    tierKey: "season" as const,
     priceKey: "p59" as const,
     suffix: "/ year",
     unit: "WORTH IT AT THREE RACES",
@@ -73,6 +77,7 @@ const TIERS = [
   {
     kicker: "MONTHLY",
     name: "Coach",
+    tierKey: "coach" as const,
     priceKey: "p99" as const,
     suffix: "/ month",
     unit: "UP TO 15 ATHLETES",
@@ -83,7 +88,7 @@ const TIERS = [
       { ok: true, text: "White-label export" },
       { ok: true, text: "Everything in Season Pass" },
     ],
-    cta: "Talk to us first",
+    cta: "Start a coach seat",
     href: routes.dashboard,
     dark: false,
     recommended: false,
@@ -94,6 +99,22 @@ export default function PricingPage() {
   const [cur, setCur] = useState<Currency>("USD");
   const sym = CURRENCY_SYMBOL[cur];
   const rows = matrixRows();
+  const { status } = useAuth();
+
+  /**
+   * Where each tier's button goes, which depends on who is reading.
+   *
+   * The two recurring tiers are bought on the billing screen — that is where
+   * the subscription endpoints live and where an existing agreement can be
+   * seen and changed. Sending a signed-out visitor straight there would land
+   * them on a sign-in wall with no explanation, so they go to sign-up first.
+   * A single race plan is not bought here at all: it is bought against one
+   * specific plan, at that plan's checkout.
+   */
+  const ctaHref = (tierKey: (typeof TIERS)[number]["tierKey"], fallback: string): string => {
+    if (tierKey !== "season" && tierKey !== "coach") return fallback;
+    return status === "authenticated" ? `${routes.settings}?tab=billing` : routes.signup;
+  };
 
   const priceFor = (key: "p19" | "p59" | "p99" | null) => {
     if (!key) return "0";
@@ -184,7 +205,7 @@ export default function PricingPage() {
                 ))}
               </div>
               <Link
-                href={t.href}
+                href={ctaHref(t.tierKey, t.href)}
                 className={t.dark ? "btn-accent-invert" : "btn-outline-dark2"}
                 style={{
                   display: "flex",

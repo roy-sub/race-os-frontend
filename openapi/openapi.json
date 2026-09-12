@@ -3357,6 +3357,254 @@
         }
       }
     },
+    "/api/v1/subscriptions": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Buy a season pass or a coach seat",
+        "description": "The two recurring tiers, which until now could only be inserted by hand.\n\n**Not two-phase, unlike a race plan.** A plan is authorized and captured\nonly if the solve succeeds, because the athlete might not get what they\npaid for. A season pass is a subscription to a service that is available\nthe moment it starts, so there is nothing to hold money against.\n\n**The row takes whatever status the provider reports, and nothing else.**\nAgainst Stripe that means a new agreement opens ``incomplete`` \u2014 stored as\nPAST_DUE \u2014 until the first payment confirms, because entitlements must not\nfollow from a card that has not cleared. What activates it is the\nprovider's own webhook, the same path that already reconciles every other\npayment state; the client confirms the card with the returned\n``client_secret`` first. The in-memory gateway has no card to confirm, so\na subscription it opens is live immediately, which is what makes a local\nrun and the whole test suite work without credentials.\n\nAn athlete who already subscribes is *moved* to the new tier rather than\nsold a second agreement.",
+        "operationId": "subscribe_api_v1_subscriptions_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "This user's subscriptions",
+        "description": "Newest first, cancelled ones included \u2014 a past agreement is history the\nbilling page has to be able to show.",
+        "operationId": "list_subscriptions_api_v1_subscriptions_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SubscriptionOut"
+                  },
+                  "title": "Response List Subscriptions Api V1 Subscriptions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/{subscription_id}/cancel": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Stop renewing",
+        "description": "Ends at the period boundary. **Nothing already paid for is taken back.**\n\nNot a courtesy \u2014 it is what was bought. The athlete has paid for the period\nthey are in, and every race they captured a payment for stays theirs\npermanently regardless, because that is a purchase rather than a\nsubscription.",
+        "operationId": "cancel_subscription_api_v1_subscriptions__subscription_id__cancel_post",
+        "parameters": [
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Subscription Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/{subscription_id}/resume": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Undo a pending cancellation",
+        "description": "Only before it takes effect. Once the period has ended there is nothing\nto resume and the athlete subscribes again.",
+        "operationId": "resume_subscription_api_v1_subscriptions__subscription_id__resume_post",
+        "parameters": [
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Subscription Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/invoices": {
       "get": {
         "tags": [
@@ -13257,6 +13505,98 @@
         },
         "type": "object",
         "title": "SubmissionUpdate"
+      },
+      "SubscribeRequest": {
+        "properties": {
+          "tier": {
+            "$ref": "#/components/schemas/UserTier"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tier"
+        ],
+        "title": "SubscribeRequest",
+        "description": "Which recurring tier to buy.\n\nNo currency: a subscription is billed against a provider price id, and\nthat id already fixes the currency. Accepting one here would let a client\nask for euros and be charged in pounds, with the response quoting the\nfigure it asked for."
+      },
+      "SubscribeResponse": {
+        "properties": {
+          "subscription": {
+            "$ref": "#/components/schemas/SubscriptionOut"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Secret"
+          }
+        },
+        "type": "object",
+        "required": [
+          "subscription"
+        ],
+        "title": "SubscribeResponse",
+        "description": "The agreement, plus what the client needs to confirm a payment method.\n\n``client_secret`` is returned once, never stored and never logged. It is\nabsent when the provider needed no confirmation \u2014 a returning customer\nwith a card on file \u2014 and that absence is a success, not a failure."
+      },
+      "SubscriptionOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/UserTier"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubscriptionStatus"
+          },
+          "renews_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Renews At"
+          },
+          "cancel_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tier",
+          "status"
+        ],
+        "title": "SubscriptionOut"
+      },
+      "SubscriptionStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "cancelled",
+          "past_due"
+        ],
+        "title": "SubscriptionStatus"
       },
       "SupportRequest": {
         "properties": {

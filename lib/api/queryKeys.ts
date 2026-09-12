@@ -44,6 +44,7 @@ export const queryKeys = {
       [...queryKeys.billing.all, "entitlements", raceId ?? null] as const,
     prices: () => [...queryKeys.billing.all, "prices"] as const,
     invoices: () => [...queryKeys.billing.all, "invoices"] as const,
+    subscriptions: () => [...queryKeys.billing.all, "subscriptions"] as const,
   },
   dashboard: {
     all: ["dashboard"] as const,

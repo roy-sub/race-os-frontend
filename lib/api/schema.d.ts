@@ -1035,6 +1035,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * This user's subscriptions
+         * @description Newest first, cancelled ones included — a past agreement is history the
+         *     billing page has to be able to show.
+         */
+        get: operations["list_subscriptions_api_v1_subscriptions_get"];
+        put?: never;
+        /**
+         * Buy a season pass or a coach seat
+         * @description The two recurring tiers, which until now could only be inserted by hand.
+         *
+         *     **Not two-phase, unlike a race plan.** A plan is authorized and captured
+         *     only if the solve succeeds, because the athlete might not get what they
+         *     paid for. A season pass is a subscription to a service that is available
+         *     the moment it starts, so there is nothing to hold money against.
+         *
+         *     **The row takes whatever status the provider reports, and nothing else.**
+         *     Against Stripe that means a new agreement opens ``incomplete`` — stored as
+         *     PAST_DUE — until the first payment confirms, because entitlements must not
+         *     follow from a card that has not cleared. What activates it is the
+         *     provider's own webhook, the same path that already reconciles every other
+         *     payment state; the client confirms the card with the returned
+         *     ``client_secret`` first. The in-memory gateway has no card to confirm, so
+         *     a subscription it opens is live immediately, which is what makes a local
+         *     run and the whole test suite work without credentials.
+         *
+         *     An athlete who already subscribes is *moved* to the new tier rather than
+         *     sold a second agreement.
+         */
+        post: operations["subscribe_api_v1_subscriptions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/{subscription_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop renewing
+         * @description Ends at the period boundary. **Nothing already paid for is taken back.**
+         *
+         *     Not a courtesy — it is what was bought. The athlete has paid for the period
+         *     they are in, and every race they captured a payment for stays theirs
+         *     permanently regardless, because that is a purchase rather than a
+         *     subscription.
+         */
+        post: operations["cancel_subscription_api_v1_subscriptions__subscription_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/{subscription_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo a pending cancellation
+         * @description Only before it takes effect. Once the period has ended there is nothing
+         *     to resume and the athlete subscribes again.
+         */
+        post: operations["resume_subscription_api_v1_subscriptions__subscription_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/invoices": {
         parameters: {
             query?: never;
@@ -4270,6 +4359,50 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /**
+         * SubscribeRequest
+         * @description Which recurring tier to buy.
+         *
+         *     No currency: a subscription is billed against a provider price id, and
+         *     that id already fixes the currency. Accepting one here would let a client
+         *     ask for euros and be charged in pounds, with the response quoting the
+         *     figure it asked for.
+         */
+        SubscribeRequest: {
+            tier: components["schemas"]["UserTier"];
+        };
+        /**
+         * SubscribeResponse
+         * @description The agreement, plus what the client needs to confirm a payment method.
+         *
+         *     ``client_secret`` is returned once, never stored and never logged. It is
+         *     absent when the provider needed no confirmation — a returning customer
+         *     with a card on file — and that absence is a success, not a failure.
+         */
+        SubscribeResponse: {
+            subscription: components["schemas"]["SubscriptionOut"];
+            /** Client Secret */
+            client_secret?: string | null;
+        };
+        /** SubscriptionOut */
+        SubscriptionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            tier: components["schemas"]["UserTier"];
+            status: components["schemas"]["SubscriptionStatus"];
+            /** Renews At */
+            renews_at?: string | null;
+            /** Cancel At */
+            cancel_at?: string | null;
+        };
+        /**
+         * SubscriptionStatus
+         * @enum {string}
+         */
+        SubscriptionStatus: "active" | "cancelled" | "past_due";
         /** SupportRequest */
         SupportRequest: {
             /**
@@ -6251,6 +6384,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PurchaseOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_subscriptions_api_v1_subscriptions_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subscribe_api_v1_subscriptions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscribeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscribeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_subscription_api_v1_subscriptions__subscription_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                subscription_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_subscription_api_v1_subscriptions__subscription_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                subscription_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionOut"];
                 };
             };
             /** @description Validation Error */
