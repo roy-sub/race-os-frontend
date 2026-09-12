@@ -287,6 +287,34 @@ export function useDeleteAccount() {
   });
 }
 
+/**
+ * The guided estimator: two questions in, one stamped estimate out.
+ *
+ * The server applies the result to the constraint and stamps it `ESTIMATED`
+ * with a confidence and an evidence note. That provenance travels with the
+ * number to the finish line — an estimate never becomes a measurement by
+ * being saved, and nothing here lets a caller claim otherwise.
+ */
+export function useEstimateConstraint() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ key, answers }: { key: string; answers: Record<string, number | boolean> }) =>
+      unwrap(
+        client.POST("/api/v1/constraints/{key}/estimate", {
+          params: { path: { key } },
+          // `answers` is `object` on the wire because each estimator asks
+          // something different, so the generated type is `Record<string,
+          // never>` and cannot be satisfied. The field names that matter are
+          // pinned in `lib/estimator.ts` against the server's own reads.
+          body: { answers } as unknown as { answers: Record<string, never> },
+        }),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.constraints.all });
+    },
+  });
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);

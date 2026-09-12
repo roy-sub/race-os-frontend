@@ -30,12 +30,14 @@ import { client, unwrap } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/errors";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ESTIMATORS } from "@/lib/estimator";
 import {
   ERASURE_CONFIRMATION,
   formatDate,
   useConstraints,
   useDeleteAccount,
   useErasureImpact,
+  useEstimateConstraint,
   useInvoices,
   usePreferences,
   useSaveConstraint,
@@ -59,6 +61,7 @@ import {
   CONF_FG,
   SENSITIVITY,
   SRC_STYLE,
+  CONSTRAINT_ORDER,
   STALE_FG,
   TABS,
   TIER_LABEL,
@@ -520,9 +523,187 @@ function ConstraintRow({
   );
 }
 
+/**
+ * The three ways a constraint gets a value.
+ *
+ * What was here was four device-provider cards — Garmin, Wahoo and friends —
+ * offering to connect accounts nothing could ever read. They are gone, and
+ * this is what replaces them: the paths that actually exist, named honestly.
+ *
+ * They are in descending order of evidence, and that order is the point.
+ * A measured value from a race you uploaded beats one you typed, and one you
+ * typed beats one estimated from two questions. Every value carries which of
+ * these produced it, all the way to the finish line.
+ */
+function DataSources({ onEstimate }: { onEstimate: () => void }) {
+  return (
+    <div style={{ ...CARD, padding: "26px 30px", marginTop: 26 }}>
+      <div className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#8C8578" }}>
+        WHERE THESE NUMBERS COME FROM
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 14, marginTop: 18 }}>
+        {[
+          {
+            rank: "STRONGEST",
+            name: "Upload a race file",
+            body: "A finished race is re-solved against what you actually did, and the result is a measured value.",
+            href: routes.postRace,
+            cta: "Post-race analysis →",
+          },
+          {
+            rank: "STRONG",
+            name: "Enter it yourself",
+            body: "A test you have done and trust. Type it into the table below; it is marked as yours and used from then on.",
+          },
+          {
+            rank: "WEAKEST",
+            name: "Two questions",
+            body: "For a constraint you have never tested. Stamped as an estimate with its confidence, and never silently promoted.",
+            action: onEstimate,
+            cta: "Estimate one →",
+          },
+        ].map((path) => (
+          <div key={path.name} style={{ padding: "18px 20px", borderRadius: 9, background: "rgba(255,255,255,.6)", border: "1px solid rgba(21,20,15,.08)" }}>
+            <div className="mono" style={{ fontSize: 8, letterSpacing: ".14em", color: "#A8A192" }}>{path.rank}</div>
+            <div style={{ fontSize: 15.5, fontWeight: 500, letterSpacing: "-.02em", marginTop: 9 }}>{path.name}</div>
+            <p style={{ margin: "8px 0 0", fontSize: 13.5, lineHeight: 1.55, color: "#5C574B" }}>{path.body}</p>
+            {path.href && (
+              <Link href={path.href} className="link-accent mono" style={{ display: "inline-block", fontSize: 9.5, letterSpacing: ".12em", color: "#C6461B", marginTop: 12 }}>
+                {path.cta}
+              </Link>
+            )}
+            {path.action && (
+              <button type="button" onClick={path.action} className="mono link-accent" style={{ display: "inline-block", padding: 0, border: "none", background: "transparent", fontSize: 9.5, letterSpacing: ".12em", color: "#C6461B", marginTop: 12, cursor: "pointer" }}>
+                {path.cta}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {/* Said plainly, because the cards that were here promised otherwise. */}
+      <p style={{ margin: "16px 0 0", maxWidth: 720, fontSize: 13, lineHeight: 1.6, color: "#6B6455" }}>
+        There is no device or training-platform sync. Connecting one is not on the roadmap, so the
+        cards that used to offer it have been removed rather than left to look pending.
+      </p>
+    </div>
+  );
+}
+
+/** The guided estimator: pick a constraint, answer its questions, see the stamp. */
+function EstimatorPanel({ onClose }: { onClose: () => void }) {
+  const [key, setKey] = useState<string>(CONSTRAINT_ORDER[0]);
+  const [answers, setAnswers] = useState<Record<string, number | boolean>>({});
+  const estimate = useEstimateConstraint();
+  const spec = ESTIMATORS[key];
+
+  const ready = spec.questions.every(
+    (q) => q.kind === "boolean" || typeof answers[q.name] === "number",
+  );
+
+  function choose(next: string) {
+    setKey(next);
+    setAnswers({});
+    estimate.reset();
+  }
+
+  return (
+    <div style={{ ...CARD, padding: "26px 30px", marginTop: 14, border: "1px solid rgba(198,70,27,.25)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
+        <div className="mono" style={{ fontSize: 9, letterSpacing: ".16em", color: "#8C8578" }}>GUIDED ESTIMATE</div>
+        <button type="button" onClick={onClose} className="mono" style={{ marginLeft: "auto", background: "none", border: "none", fontSize: 9, letterSpacing: ".13em", color: "#C6461B", cursor: "pointer" }}>
+          CLOSE
+        </button>
+      </div>
+
+      <label style={{ display: "block", marginTop: 18, maxWidth: 340 }}>
+        <span className="mono" style={{ display: "block", fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>CONSTRAINT</span>
+        <select
+          value={key}
+          onChange={(event) => choose(event.target.value)}
+          style={{ width: "100%", height: 40, padding: "0 12px", marginTop: 8, borderRadius: 7, border: "1px solid rgba(21,20,15,.16)", background: "#fff", fontSize: 14 }}
+        >
+          {CONSTRAINT_ORDER.filter((k: string) => ESTIMATORS[k]).map((k: string) => (
+            <option key={k} value={k}>{constraintLabel(k)}</option>
+          ))}
+        </select>
+      </label>
+
+      <p style={{ margin: "14px 0 0", maxWidth: 560, fontSize: 14, lineHeight: 1.55, color: "#5C574B" }}>
+        {spec.intro}
+      </p>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 16 }}>
+        {spec.questions.map((q) => (
+          <label key={q.name} style={{ display: "block", minWidth: 170 }}>
+            <span className="mono" style={{ display: "block", fontSize: 8.5, letterSpacing: ".14em", color: "#A8A192" }}>
+              {q.label.toUpperCase()}{q.suffix ? ` · ${q.suffix.toUpperCase()}` : ""}
+            </span>
+            {q.kind === "boolean" ? (
+              <select
+                value={answers[q.name] ? "yes" : "no"}
+                onChange={(e) => setAnswers({ ...answers, [q.name]: e.target.value === "yes" })}
+                style={{ width: "100%", height: 40, padding: "0 12px", marginTop: 8, borderRadius: 7, border: "1px solid rgba(21,20,15,.16)", background: "#fff", fontSize: 14 }}
+              >
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            ) : (
+              <input
+                type="number"
+                min={q.min}
+                max={q.max}
+                step={q.step}
+                value={typeof answers[q.name] === "number" ? String(answers[q.name]) : ""}
+                onChange={(e) =>
+                  setAnswers({
+                    ...answers,
+                    [q.name]: e.target.value === "" ? Number.NaN : Number(e.target.value),
+                  })
+                }
+                style={{ width: "100%", height: 40, padding: "0 12px", marginTop: 8, borderRadius: 7, border: "1px solid rgba(21,20,15,.16)", background: "#fff", fontSize: 14 }}
+              />
+            )}
+          </label>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        disabled={!ready || estimate.isPending}
+        onClick={() => estimate.mutate({ key, answers })}
+        style={{ height: 40, padding: "0 20px", marginTop: 18, borderRadius: 7, border: "none", background: ready ? "#E4622F" : "rgba(228,98,47,.35)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: ready ? "pointer" : "default" }}
+      >
+        {estimate.isPending ? "Estimating…" : "Estimate and save"}
+      </button>
+
+      {estimate.error && (
+        <div style={{ marginTop: 16 }}><ApiErrorState error={estimate.error} /></div>
+      )}
+
+      {estimate.data && (
+        <div style={{ marginTop: 18, padding: "16px 18px", borderRadius: 9, background: "rgba(255,255,255,.7)", border: "1px solid rgba(21,20,15,.08)" }}>
+          <div className="mono" style={{ fontSize: 20, letterSpacing: "-.03em" }}>
+            {estimate.data.value} {estimate.data.unit}
+          </div>
+          {/* The stamp, not a footnote. An estimate that reads like a
+              measurement is the failure this whole provenance system exists
+              to prevent. */}
+          <div className="mono" style={{ fontSize: 8.5, letterSpacing: ".14em", color: "#C6461B", marginTop: 8 }}>
+            ESTIMATED · {estimate.data.confidence_pct}% CONFIDENCE
+          </div>
+          <p style={{ margin: "10px 0 0", maxWidth: 520, fontSize: 13.5, lineHeight: 1.55, color: "#5C574B" }}>
+            {estimate.data.evidence_note}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ConstraintsTab({ indicator }: { indicator: ReturnType<typeof useSaveIndicator> }) {
   const { data, isPending, error, refetch } = useConstraints();
   const save = useSaveConstraint();
+  const [estimating, setEstimating] = useState(false);
   const rows = useMemo(() => sortConstraints(data ?? []), [data]);
 
   return (
@@ -532,6 +713,9 @@ function ConstraintsTab({ indicator }: { indicator: ReturnType<typeof useSaveInd
         The numbers every plan is solved against. Measured values come from races you have uploaded —
         you can override any of them, and the override is marked.
       </p>
+
+      <DataSources onEstimate={() => setEstimating(true)} />
+      {estimating && <EstimatorPanel onClose={() => setEstimating(false)} />}
 
       {error ? (
         <div style={{ marginTop: 26 }}>
