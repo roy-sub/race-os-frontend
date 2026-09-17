@@ -138,7 +138,7 @@ export default function LandingPage() {
       <section id="top" style={{ position: "relative", height: "92vh", minHeight: 700, background: "#1C1916", overflow: "hidden" }}>
         <ZoomReveal style={{ position: "absolute", inset: 0 }}>
           <MediaPlaceholder
-            path="assets/hero/hero-loop.mp4"
+            path="assets/hero/hero-loop.webm"
             background="linear-gradient(158deg,#3A332B 0%,#241F1A 46%,#14120F 100%)"
             style={{ position: "absolute", inset: 0 }}
           />

@@ -56,6 +56,16 @@ function candidates(path: string): { kind: "image" | "video"; srcs: string[] } {
   return { kind: video ? "video" : "image", srcs: ordered.map((e) => `/${base}.${e}`) };
 }
 
+/** The `type` hint on a <source>, so the browser can skip what it cannot play. */
+const MIME: Record<string, string> = {
+  mp4: "video/mp4",
+  webm: "video/webm",
+};
+
+function mimeFor(src: string): string | undefined {
+  return MIME[src.slice(src.lastIndexOf(".") + 1).toLowerCase()];
+}
+
 export function MediaPlaceholder({
   path,
   background,
@@ -87,30 +97,48 @@ export function MediaPlaceholder({
       className={className}
       style={{ position: "relative", overflow: "hidden", background, ...style }}
     >
-      {src &&
-        (kind === "video" ? (
-          <video
-            key={src}
-            src={src}
-            // Muted and inline are what make autoplay permissible at all; a
-            // background loop that demanded a tap would just sit there black.
-            autoPlay
-            muted
-            loop
-            playsInline
-            preload="metadata"
-            aria-hidden="true"
-            onLoadedData={() => setLoaded(true)}
-            onError={() => setAttempt((i) => i + 1)}
-            style={cover}
-          />
-        ) : (
+      {kind === "video" ? (
+        /* One <source> per candidate rather than a src plus an onError chain.
+           The browser walks the list itself and the `type` hints let it skip a
+           codec it cannot decode *without downloading it* — which is the whole
+           game when the alternatives are a 25 MB mp4 and a 5.7 MB webm.
+
+           It also fixes a real bug. A media element that fails can fire its
+           error before React has attached `onError` — the element is created
+           with the src already on it — so the chain silently stopped at the
+           first candidate and the fallback never ran. Sources have no such
+           race: the fallback is the browser's, not ours. */
+        <video
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          aria-hidden="true"
+          onLoadedData={() => setLoaded(true)}
+          style={cover}
+        >
+          {srcs.map((s) => (
+            <source key={s} src={s} type={mimeFor(s)} />
+          ))}
+        </video>
+      ) : (
+        src && (
           /* `next/image` buys nothing here: the export is static and the
              optimiser is off (`images.unoptimized`), and a plain <img> is what
-             lets the format fallback above work through onError. */
+             lets the format fallback work through onError. <picture> would not
+             do it — it falls back on an unsupported *type*, never on a 404. */
           // eslint-disable-next-line @next/next/no-img-element
           <img
             key={src}
+            // Catches the same race as above: if the image already failed
+            // before React wired `onError` up, `complete` is true while
+            // `naturalWidth` is still 0, and the next candidate is tried.
+            ref={(el) => {
+              if (el && el.complete && el.naturalWidth === 0) {
+                setAttempt((i) => (i === attempt ? i + 1 : i));
+              }
+            }}
             src={src}
             alt={alt}
             loading="lazy"
@@ -119,7 +147,8 @@ export function MediaPlaceholder({
             onError={() => setAttempt((i) => i + 1)}
             style={cover}
           />
-        ))}
+        )
+      )}
 
       {/* The handoff label is for an empty slot. Once a real file is on screen
           it would just be a path printed over somebody's photograph. */}
