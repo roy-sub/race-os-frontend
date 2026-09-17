@@ -829,6 +829,8 @@ export default function LandingPage() {
           />
         </ZoomReveal>
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right,rgba(12,11,10,.8),rgba(12,11,10,.35))" }} />
+        {/* The photograph does not end at the footer, it becomes it. */}
+        <div aria-hidden className="fade-to-ink" />
         <div style={{ position: "relative", maxWidth: 1400, margin: "0 auto", padding: "0 48px", height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <RevealLines
             lines={["Start with your", "own course."]}

@@ -37,7 +37,6 @@ export const ASSET_FILES: ReadonlySet<string> = new Set([
   "assets/courses/portugal-cascais-full.webp",
   "assets/cta/dawn-swim.webp",
   "assets/dashboard/post-race.webp",
-  "assets/footer/backdrop.webp",
   "assets/guide/valley-drag.webp",
   "assets/hero/hero-loop.mp4",
   "assets/hero/hero-loop.webm",

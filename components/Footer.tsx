@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { Mark } from "./Mark";
-import { MediaPlaceholder } from "./MediaPlaceholder";
 import { routes } from "@/lib/routes";
 import { useCourses } from "@/lib/api/courses";
 
@@ -86,21 +85,67 @@ function FooterCol({ title, links }: { title: string; links: { href: string; lab
   );
 }
 
+/**
+ * How far the ink field stands before the card begins.
+ *
+ * Every page arrives at this footer differently: the marketing pages come out
+ * of a full-bleed photograph, the app pages out of cream with 88–104px of air.
+ * This band is what both of them land on. A photograph above fades into it and
+ * the seam disappears entirely; cream above meets it as a clean edge between
+ * two flat fields, which reads as a decision rather than an accident. It is
+ * also simply room — the card used to start 20px after the page ended.
+ */
+const RISER = 108;
+
 type FooterProps = {
   /** Extra copyright-line suffix, e.g. " · COURSE BUNDLE v2026.2". */
   extra?: string;
 };
 
-/** Shared footer — dark media band, inset cream panel, five columns, solo-founder credit. */
+/** Shared footer — ink field, inset cream panel, five columns, solo-founder credit. */
 export function Footer({ extra = "" }: FooterProps) {
   const courseLinks = useCourseLinks();
   return (
-    <footer style={{ position: "relative", background: "#15140F", padding: 20, overflow: "hidden" }}>
-      <MediaPlaceholder
-        path="assets/footer/backdrop.webp"
-        background="linear-gradient(140deg,#2E271F 0%,#1A1713 55%,#100E0C 100%)"
-        style={{ position: "absolute", inset: 0 }}
+    <footer style={{ position: "relative", background: "#15140F", padding: "0 20px 20px", overflow: "hidden" }}>
+      {/* Grain first, then the lift — see .ink-grain. The grain is opaque and
+          IS the field, so anything tinting the field has to sit on top of it. */}
+      <div aria-hidden className="ink-grain" style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
+
+      {/* The field.
+
+          This was a photograph — `assets/footer/backdrop.webp`, 643 KB of
+          coastline shipped with every page, of which the inset card covered
+          everything but a 20px border. It was not a background, it was a
+          picture frame. And on the two pages whose last section is itself a
+          full-bleed photograph it set one image directly on top of another
+          with a hard line between them, which is what made the bottom of the
+          page look stacked rather than finished.
+
+          Ink instead — but not flat ink. A warm lift where the page comes down
+          into the field and a cool one under the card give it depth without
+          giving it a subject, which is the whole point: the footer is the
+          quiet end of the page and anything with a subject competes with the
+          section above it. */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            /* Zero at the top edge, on purpose and precisely. The seam has to
+               be the same #15140F the section above fades down to — a lift
+               that peaks at the join would draw the very line this is meant to
+               remove. The warmth comes in below it, once the eye has already
+               crossed. */
+            "linear-gradient(to bottom, rgba(228,98,47,0) 0px, rgba(228,98,47,.055) 190px, rgba(228,98,47,0) 380px)," +
+            "radial-gradient(86% 54% at 50% 100%, rgba(241,238,232,.045) 0%, rgba(241,238,232,0) 74%)",
+          pointerEvents: "none",
+        }}
       />
+
+      {/* The riser — see RISER. */}
+      <div aria-hidden style={{ height: RISER }} />
+
       <div style={{ position: "relative", background: "#FBF8F2", borderRadius: 9, padding: "56px 52px 40px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr)) 200px", gap: 40 }}>
           <FooterCol title="Product" links={productLinks} />

@@ -397,3 +397,70 @@ main:focus { outline: none; }
 [data-race-display="large"] .mono {
   letter-spacing: .1em;
 }
+
+/* ---------------------------------------------------------------------------
+   The dark end of the page.
+   ---------------------------------------------------------------------------
+   Two rules that belong together: one makes a large near-black area look like
+   a material, the other makes a photograph end in that material instead of
+   stopping at a line.
+
+   `.ink-grain` is a tiled SVG noise field, desaturated inside the filter so
+   the browser never has to run a CSS filter over it. Laid over the footer at a
+   few percent it does something a flat fill cannot: it breaks up the stepped
+   banding an 8-bit gradient shows on a wide monitor, and it gives the ink the
+   tooth of paper. You should not be able to see it unless you go looking. */
+.ink-grain {
+  /* This is not noise laid *over* the ink — it is the ink, with grain in it.
+
+     Everything about the way it is written comes from sampling pixels across
+     the join rather than from looking at it. Noise composited over a near-black
+     field lifts that field several levels however it is blended: painted
+     normally it averages mid-grey, and `overlay` is worse, not better, because
+     on a base this dark its two halves have wildly different slopes (0.16 below
+     mid-grey, 1.84 above) so the bright half of the noise dominates. Three
+     levels is nothing to look at and everything to see — it is exactly the step
+     that reads as a line where a grained footer meets the ungrained photograph
+     fading into it.
+
+     So the noise is mapped, in the filter, to a narrow band centred on
+     #15140F itself: slope .1 with per-channel intercepts that put the mean back
+     on 21/20/15. Opaque, normally blended, no blend mode. The field's mean is
+     the ink exactly, and only the variation lands — enough to break the
+     stepped banding an 8-bit gradient shows across a wide monitor, and to give
+     the ink the tooth of paper instead of the deadness of a switched-off
+     screen. `color-interpolation-filters: sRGB` because the default is linear
+     and would move every one of those numbers. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncR type='linear' slope='.1' intercept='.032'/%3E%3CfeFuncG type='linear' slope='.1' intercept='.028'/%3E%3CfeFuncB type='linear' slope='.1' intercept='.009'/%3E%3CfeFuncA type='linear' slope='0' intercept='1'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 220px 220px;
+}
+
+/* `.fade-to-ink` goes at the bottom of a full-bleed photographic section that
+   sits directly above the footer. The photograph does not stop — it resolves:
+   by its last pixel it is already the footer's own #15140F, so the two read as
+   one continuous dark mass rather than two images stacked on each other.
+
+   220px because the eye finds a short fade: it reads as a gradient laid on a
+   photograph. Over this distance there is nothing to find, only a page getting
+   darker as it ends. */
+.fade-to-ink {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 260px;
+  pointer-events: none;
+  /* Full ink is reached at 90%, not at 100%, and then held. Without that last
+     held strip the darkest pixel in the whole transition falls exactly on the
+     join — the photograph is still showing through a hair above it and the
+     footer's own warmth is already rising a hair below — and a trough five
+     levels deep is enough to read as a line. Measured, not guessed. */
+  background: linear-gradient(
+    to bottom,
+    rgba(21, 20, 15, 0) 0%,
+    rgba(21, 20, 15, .38) 46%,
+    rgba(21, 20, 15, .8) 74%,
+    #15140F 90%,
+    #15140F 100%
+  );
+}

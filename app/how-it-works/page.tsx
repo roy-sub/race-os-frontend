@@ -152,6 +152,8 @@ export default function HowItWorksPage() {
           <MediaPlaceholder path="assets/how/dawn-start.webp" background="linear-gradient(120deg,#332B21 0%,#191510 62%,#100E0B 100%)" style={{ position: "absolute", inset: 0 }} />
         </Reveal>
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right,rgba(12,11,10,.82),rgba(12,11,10,.34))" }} />
+        {/* The photograph does not end at the footer, it becomes it. */}
+        <div aria-hidden className="fade-to-ink" />
         <div style={{ position: "relative", maxWidth: 1360, margin: "0 auto", padding: "0 56px", height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <RevealLines
             as="h2"
