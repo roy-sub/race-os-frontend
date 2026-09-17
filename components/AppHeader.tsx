@@ -14,6 +14,9 @@ const NAV = [
   { href: routes.racePlan, label: "My plan", key: "racePlan" },
 ] as const;
 
+/** The sign-up invitation, which only makes sense to a signed-out visitor. */
+const SIGNUP_CTA = "Start free";
+
 type AppHeaderProps = {
   /** Which nav item to show as the active (dark) entry. */
   active?: (typeof NAV)[number]["key"];
@@ -38,6 +41,14 @@ export function AppHeader({ active, ctaLabel = "Build your plan", ctaHref = "#co
   const { status, user } = useAuth();
   const signedIn = status === "authenticated";
   const firstName = user?.name?.trim().split(" ")[0] || user?.email?.split("@")[0] || "Account";
+
+  /* "Start free" is an invitation to open an account. Shown to somebody who
+     already has one it reads as being signed out — the same complaint that put
+     the identity above into this header — and four marketing pages pass it.
+     Handled once here rather than at each call site, so a new page cannot
+     reintroduce it. */
+  const cta = signedIn && ctaLabel === SIGNUP_CTA ? "Build a plan" : ctaLabel;
+  const href = signedIn && ctaLabel === SIGNUP_CTA ? routes.planBuilder : ctaHref;
 
   return (
     <header
@@ -91,7 +102,7 @@ export function AppHeader({ active, ctaLabel = "Build your plan", ctaHref = "#co
             </Link>
           )}
           <a
-            href={ctaHref}
+            href={href}
             className="btn-dark-to-accent"
             style={{
               display: "inline-flex",
@@ -106,7 +117,7 @@ export function AppHeader({ active, ctaLabel = "Build your plan", ctaHref = "#co
               fontWeight: 600,
             }}
           >
-            {ctaLabel}
+            {cta}
           </a>
         </div>
       </div>

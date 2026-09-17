@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Mark } from "./Mark";
 import { routes } from "@/lib/routes";
+import { useAuth } from "@/lib/auth/AuthProvider";
 
 // Kept in step with AppHeader's nav: the home page and every other page must
 // offer the same destinations, or a link appears to come and go as you browse.
@@ -24,6 +25,17 @@ type HeaderProps = {
 /** Sticky site header shared across every marketing/app page. */
 export function Header({ variant = "transparent" }: HeaderProps) {
   const [scrolled, setScrolled] = useState(variant === "solid");
+  /**
+   * The landing page is the one header that still invited a signed-in athlete
+   * to "Log in". `AppHeader` was fixed for exactly this and this one was
+   * missed, so navigating home from the dashboard looked like being signed
+   * out — and offered no route back to the account.
+   *
+   * Same treatment, same reasoning: show whoever is signed in.
+   */
+  const { status, user } = useAuth();
+  const signedIn = status === "authenticated";
+  const firstName = user?.name?.trim().split(" ")[0] || user?.email?.split("@")[0] || "Account";
 
   useEffect(() => {
     if (variant === "solid") return;
@@ -77,11 +89,26 @@ export function Header({ variant = "transparent" }: HeaderProps) {
           ))}
         </nav>
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <Link href={routes.login} style={{ fontSize: 14, fontWeight: 500, color: navMuted }}>
-            Log in
-          </Link>
+          {signedIn ? (
+            <Link
+              href={routes.dashboard}
+              style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 14, fontWeight: 500, color: navMuted, whiteSpace: "nowrap" }}
+            >
+              <span
+                aria-hidden
+                style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(217,210,196,.9)", flex: "none" }}
+              />
+              {firstName}
+            </Link>
+          ) : (
+            <Link href={routes.login} style={{ fontSize: 14, fontWeight: 500, color: navMuted }}>
+              Log in
+            </Link>
+          )}
           <Link
-            href={routes.courseRecon}
+            /* Signed in, "Start free" is an invitation to do what they have
+               already done. The same button becomes the way on to a plan. */
+            href={signedIn ? routes.planBuilder : routes.courseRecon}
             className="btn-accent"
             style={{
               display: "inline-flex",
@@ -96,7 +123,7 @@ export function Header({ variant = "transparent" }: HeaderProps) {
               fontWeight: 600,
             }}
           >
-            Start free
+            {signedIn ? "Build a plan" : "Start free"}
           </Link>
         </div>
       </div>

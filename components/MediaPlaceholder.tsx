@@ -42,6 +42,11 @@ const IMAGE_EXTS = ["png", "jpg", "jpeg", "webp", "avif"] as const;
 const VIDEO_EXTS = ["mp4", "webm"] as const;
 
 function candidates(path: string): { kind: "image" | "video"; srcs: string[] } {
+  // No path at all is a real answer — a course whose photography has not been
+  // shot yet. Without this the extension fallback would ask for "/.png",
+  // "/.jpg" and the rest, five 404s to render a gradient.
+  if (!path || !path.trim()) return { kind: "image", srcs: [] };
+
   // Root-absolute, always. A bare "assets/…" would resolve against the current
   // route — on /how-it-works/ that asks for /how-it-works/assets/… and 404s.
   const clean = path.replace(/^\/+/, "");

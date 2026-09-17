@@ -173,7 +173,16 @@ export function AccountHeader({ active, alerts = [], roleLabel, aside }: Account
               onClick={() => displayName && setMenuOpen((o) => !o)}
               style={{ display: "flex", alignItems: "center", gap: 10, cursor: displayName ? "pointer" : "default" }}
             >
-              <MediaPlaceholder path="assets/account/avatar.jpg" background="#D8D0C2" style={{ width: 30, height: 30, borderRadius: "50%", flex: "none" }} />
+              {/* `assets/account/avatar.jpg` never existed, so this asked for
+                  five files and drew a grey disc anyway. The athlete's own
+                  `avatar_url` is the only avatar this app has; without one the
+                  disc is the honest answer, and costs no requests. */}
+              <MediaPlaceholder
+                path={user?.avatar_url ?? ""}
+                alt=""
+                background="#D8D0C2"
+                style={{ width: 30, height: 30, borderRadius: "50%", flex: "none" }}
+              />
               <div style={{ lineHeight: 1.15 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-.01em" }}>
                   {displayName ?? (status === "loading" ? <Skeleton width={96} height={12} /> : "Signed out")}

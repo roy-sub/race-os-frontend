@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useMemo, useState } from "react";
+import { courseImageFor } from "@/lib/courseMedia";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
@@ -231,7 +232,7 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
 
       {/* ---------------- Hero ---------------- */}
       <section style={{ position: "relative", height: "66vh", minHeight: 520, background: "#1C1916", overflow: "hidden" }}>
-        <MediaPlaceholder path="assets/courses/course-hero.jpg" background="linear-gradient(155deg,#453B31 0%,#251F1A 52%,#13110F 100%)" style={{ position: "absolute", inset: 0 }} />
+        <MediaPlaceholder path={courseImageFor(course, "hero") ?? ""} background="linear-gradient(155deg,#453B31 0%,#251F1A 52%,#13110F 100%)" style={{ position: "absolute", inset: 0 }} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top,rgba(12,11,10,.9) 0%,rgba(12,11,10,.3) 55%,rgba(12,11,10,.45) 100%)" }} />
         <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxWidth: 1360, margin: "0 auto", padding: "0 56px 44px" }}>
           <div className="mono" style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 10, letterSpacing: ".15em", color: "rgba(255,255,255,.45)", marginBottom: 22 }}>

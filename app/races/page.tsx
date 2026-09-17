@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { courseImageFor } from "@/lib/courseMedia";
 import { selectable } from "@/lib/a11y";
 import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
@@ -97,7 +98,7 @@ function CourseRow({ course, delay }: { course: Course; delay: number }) {
 
   const inner = (
       <div style={{ display: "grid", gridTemplateColumns: "172px minmax(0,1.3fr) 116px 1fr 1fr auto", gap: 24, alignItems: "center", padding: "0 28px 0 0", opacity: available ? 1 : 0.62 }}>
-        <MediaPlaceholder path={course.media_card_path ?? "assets/courses/placeholder.jpg"} background={course.tone_color ?? "#3E352B"} style={{ height: 132, position: "relative", flex: "none" }} />
+        <MediaPlaceholder path={courseImageFor(course) ?? ""} background={course.tone_color ?? "#3E352B"} style={{ height: 132, position: "relative", flex: "none" }} />
         <div style={{ minWidth: 0, padding: "22px 0" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ width: 5, height: 5, borderRadius: "50%", background: available ? prov.dot : "#C4BCAC", flex: "none" }} />
