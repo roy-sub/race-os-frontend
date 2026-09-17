@@ -823,7 +823,7 @@ export default function LandingPage() {
       <section style={{ marginTop: 130, position: "relative", height: 540, overflow: "hidden" }}>
         <ZoomReveal style={{ position: "absolute", inset: 0 }}>
           <MediaPlaceholder
-            path="assets/cta/dawn-swim.png"
+            path="assets/cta/dawn-swim.webp"
             background="linear-gradient(120deg,#33291F 0%,#181410 62%,#0F0D0B 100%)"
             style={{ position: "absolute", inset: 0 }}
           />

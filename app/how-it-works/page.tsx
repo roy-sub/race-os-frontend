@@ -130,7 +130,7 @@ export default function HowItWorksPage() {
       <section style={{ maxWidth: 1360, margin: "0 auto", padding: "96px 56px 0" }}>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.1fr) minmax(0,1fr)", gap: 52, alignItems: "center" }}>
           <Reveal style={{ borderRadius: 12, overflow: "hidden", height: 460 }}>
-            <MediaPlaceholder path="assets/how/solver-desk.png" background="linear-gradient(148deg,#463C31 0%,#282219 100%)" style={{ width: "100%", height: "100%" }} showLabel />
+            <MediaPlaceholder path="assets/how/solver-desk.webp" background="linear-gradient(148deg,#463C31 0%,#282219 100%)" style={{ width: "100%", height: "100%" }} showLabel />
           </Reveal>
           <div>
             <Reveal as="h2" style={{ margin: 0, fontSize: 54, lineHeight: 1, fontWeight: 600, letterSpacing: "-.046em" }}>Provenance on every value.</Reveal>
@@ -149,7 +149,7 @@ export default function HowItWorksPage() {
 
       <section style={{ marginTop: 104, position: "relative", height: 460, overflow: "hidden" }}>
         <Reveal style={{ position: "absolute", inset: 0 }}>
-          <MediaPlaceholder path="assets/how/dawn-start.png" background="linear-gradient(120deg,#332B21 0%,#191510 62%,#100E0B 100%)" style={{ position: "absolute", inset: 0 }} />
+          <MediaPlaceholder path="assets/how/dawn-start.webp" background="linear-gradient(120deg,#332B21 0%,#191510 62%,#100E0B 100%)" style={{ position: "absolute", inset: 0 }} />
         </Reveal>
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right,rgba(12,11,10,.82),rgba(12,11,10,.34))" }} />
         <div style={{ position: "relative", maxWidth: 1360, margin: "0 auto", padding: "0 56px", height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>

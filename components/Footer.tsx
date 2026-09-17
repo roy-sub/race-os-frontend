@@ -97,7 +97,7 @@ export function Footer({ extra = "" }: FooterProps) {
   return (
     <footer style={{ position: "relative", background: "#15140F", padding: 20, overflow: "hidden" }}>
       <MediaPlaceholder
-        path="assets/footer/backdrop.png"
+        path="assets/footer/backdrop.webp"
         background="linear-gradient(140deg,#2E271F 0%,#1A1713 55%,#100E0C 100%)"
         style={{ position: "absolute", inset: 0 }}
       />

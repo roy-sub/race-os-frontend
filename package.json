@@ -11,7 +11,8 @@
     "api:pull": "node scripts/pull-openapi.mjs",
     "api:types": "openapi-typescript openapi/openapi.json -o lib/api/schema.d.ts",
     "api:sync": "npm run api:pull && npm run api:types",
-    "deploy": "next build && wrangler pages deploy out --project-name=${CF_PAGES_PROJECT:-raceos}"
+    "deploy": "next build && wrangler pages deploy out --project-name=${CF_PAGES_PROJECT:-raceos}",
+    "assets:webp": "node scripts/png-to-webp.mjs"
   },
   "dependencies": {
     "@stripe/stripe-js": "^5.10.0",

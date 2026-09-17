@@ -199,7 +199,7 @@ export default function AuthScreen({ initialMode = "signup" }: { initialMode?: M
   return (
     <div className="auth-shell" style={{ minHeight: "100vh", background: "#F1EEE8", minWidth: 1320, display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.06fr)" }}>
       <div className="auth-art" style={{ position: "relative", background: "#1C1916", overflow: "hidden" }}>
-        <MediaPlaceholder path="assets/auth/dawn-transition.png" background="linear-gradient(158deg,#3E352B 0%,#231E19 48%,#12100E 100%)" style={{ position: "absolute", inset: 0 }} />
+        <MediaPlaceholder path="assets/auth/dawn-transition.webp" background="linear-gradient(158deg,#3E352B 0%,#231E19 48%,#12100E 100%)" style={{ position: "absolute", inset: 0 }} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top,rgba(12,11,10,.9) 0%,rgba(12,11,10,.28) 52%,rgba(12,11,10,.5) 100%)" }} />
         <div style={{ position: "absolute", left: 52, top: 44, display: "flex", alignItems: "center", gap: 11 }}>
           <Mark width={26} height={17} />
