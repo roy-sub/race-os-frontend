@@ -24,7 +24,7 @@ export const BAGS: Bag[] = [
     when: "BEFORE SWIM START",
     count: "9",
     tone: "#3E362C",
-    media: "assets/bags/morning.jpg",
+    media: "assets/bags/morning.png",
     items: [
       { name: "Breakfast, 3h out", qty: "890 kcal", note: "Taken at 03:40 for a 06:40 start" },
       { name: "Pre-swim gel", qty: "1×", note: "" },
@@ -39,7 +39,7 @@ export const BAGS: Bag[] = [
     when: "T1",
     count: "14",
     tone: "#463A2E",
-    media: "assets/bags/bike-t1.jpg",
+    media: "assets/bags/bike-t1.png",
     items: [
       { name: "Gels", qty: "9×", note: "78 g/hr across 5:42, minus two aid bottles" },
       { name: "Salt capsules", qty: "6×", note: "Sweat rate 1.3 L/hr at 29°C" },
@@ -54,7 +54,7 @@ export const BAGS: Bag[] = [
     when: "T2",
     count: "11",
     tone: "#3A3A31",
-    media: "assets/bags/run-t2.jpg",
+    media: "assets/bags/run-t2.png",
     items: [
       { name: "Caffeine gels", qty: "4×", note: "First at 12 km, then every 8 km" },
       { name: "Flask concentrate", qty: "300 ml", note: "" },
@@ -69,7 +69,7 @@ export const BAGS: Bag[] = [
     when: "KM 92",
     count: "5",
     tone: "#4A3E30",
-    media: "assets/bags/bike-sn.jpg",
+    media: "assets/bags/bike-sn.png",
     items: [
       { name: "Bottle, concentrate", qty: "90 g", note: "Reached at 04:12 — covers to km 140" },
       { name: "Gels", qty: "3×", note: "" },
@@ -83,7 +83,7 @@ export const BAGS: Bag[] = [
     when: "KM 21",
     count: "6",
     tone: "#33342E",
-    media: "assets/bags/run-sn.jpg",
+    media: "assets/bags/run-sn.png",
     items: [
       { name: "Flask refill", qty: "300 ml", note: "" },
       { name: "Caffeine gel", qty: "2×", note: "Held for the last 12 km, within tolerance" },

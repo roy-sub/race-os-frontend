@@ -151,24 +151,6 @@ export default function LandingPage() {
           }}
         />
 
-        <div
-          className="mono"
-          style={{
-            position: "absolute",
-            left: 48,
-            top: 96,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            fontSize: 10,
-            letterSpacing: ".18em",
-            color: "rgba(255,255,255,.5)",
-          }}
-        >
-          <span style={{ width: 5, height: 5, background: "#E4622F", borderRadius: "50%", animation: "breathe 2.6s ease-in-out infinite" }} />
-          <span>ASSETS/HERO/HERO-LOOP.MP4 · 16:9 LOOP, MUTED, 8S</span>
-        </div>
-
         <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxWidth: 1400, margin: "0 auto", padding: "0 48px 56px" }}>
           <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 64 }}>
             <div>
@@ -841,16 +823,13 @@ export default function LandingPage() {
       <section style={{ marginTop: 130, position: "relative", height: 540, overflow: "hidden" }}>
         <ZoomReveal style={{ position: "absolute", inset: 0 }}>
           <MediaPlaceholder
-            path="assets/cta/dawn-swim.jpg"
+            path="assets/cta/dawn-swim.png"
             background="linear-gradient(120deg,#33291F 0%,#181410 62%,#0F0D0B 100%)"
             style={{ position: "absolute", inset: 0 }}
           />
         </ZoomReveal>
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right,rgba(12,11,10,.8),rgba(12,11,10,.35))" }} />
         <div style={{ position: "relative", maxWidth: 1400, margin: "0 auto", padding: "0 48px", height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".16em", color: "rgba(255,255,255,.4)", marginBottom: 26 }}>
-            ASSETS/CTA/DAWN-SWIM.JPG · 21:9
-          </div>
           <RevealLines
             lines={["Start with your", "own course."]}
             style={{ whiteSpace: "nowrap", margin: 0, fontSize: 78, lineHeight: 0.94, fontWeight: 600, letterSpacing: "-.05em", color: "#FBF8F2" }}
