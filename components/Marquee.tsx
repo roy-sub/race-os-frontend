@@ -3,10 +3,10 @@
 /**
  * A title that scrolls itself only when it does not fit.
  *
- * The course hero sets its name at 92px on one line. "IRONMAN 70.3 Italy
- * Emilia-Romagna" is 34 characters and ran off the right edge of the viewport,
- * so the one thing every visitor needs to read first — which race is this —
- * was the one thing they could not.
+ * The course hero sets its name at 92px on one line. "IRONMAN 70.3 Costa
+ * Navarino, Peloponnese, Greece" is 47 characters and runs off the right edge
+ * of the viewport, so the one thing every visitor needs to read first — which
+ * race is this — would be the one thing they could not.
  *
  * Three rules, and the first is the one that matters:
  *

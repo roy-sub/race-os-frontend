@@ -287,9 +287,10 @@ function Recon_({ recon, priceLabel }: { recon: Recon; priceLabel: string | null
                 )}
               </div>
               {/* Set on one line at 92px, so a long official name — "IRONMAN
-                  70.3 Italy Emilia-Romagna" — ran off the right edge and the
-                  first thing a visitor needs to read was the one thing they
-                  could not. It scrolls itself, and only when it has to. */}
+                  70.3 Costa Navarino, Peloponnese, Greece" — runs off the
+                  right edge and the first thing a visitor needs to read would
+                  be the one thing they could not. It scrolls itself, and only
+                  when it has to. */}
               <Marquee
                 text={course.name}
                 style={{ maxWidth: "100%" }}
