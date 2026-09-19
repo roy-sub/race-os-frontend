@@ -22,6 +22,23 @@ import { clearAccessToken, getAccessToken, setAccessToken } from "./tokenStore";
 const REQUEST_ID_HEADER = "X-Request-ID";
 const REFRESH_PATH = "/api/v1/auth/refresh";
 
+/**
+ * Proof to the API that a request came from our own client.
+ *
+ * `/auth/refresh` is authenticated by the httpOnly cookie alone, and that
+ * cookie is `SameSite=None` in production because the site and the API sit on
+ * different registrable domains. A POST carrying only safelisted headers is a
+ * CORS "simple request", so any page could have made it with the athlete's
+ * cookie attached: it could not read the reply, but the rotated `Set-Cookie`
+ * still landed, and the next real refresh tripped the backend's token-reuse
+ * detection and signed the athlete out everywhere.
+ *
+ * This header is not on the CORS safelist, so sending it forces a preflight,
+ * and the preflight is answered against the API's origin allowlist. The
+ * backend requires it on that route.
+ */
+const CLIENT_HEADER = "X-RaceOS-Client";
+
 /** Paths where a 401 is the answer, not a stale token — refreshing would be noise. */
 const NO_REFRESH_PATHS = [
   "/api/v1/auth/refresh",
@@ -69,7 +86,7 @@ export function refreshAccessToken(): Promise<string | null> {
       const response = await fetch(`${API_BASE_URL}${REFRESH_PATH}`, {
         method: "POST",
         credentials: "include",
-        headers: { Accept: "application/json" },
+        headers: { Accept: "application/json", [CLIENT_HEADER]: "web" },
       });
       lastRefreshOffline = false;
       if (!response.ok) return null;

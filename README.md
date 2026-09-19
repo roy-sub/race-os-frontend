@@ -126,6 +126,28 @@ If you would rather Cloudflare build it, point a Pages project at this repo with
 build command `npm run build`, output directory `out`, and set the same two
 variables in the project's build environment.
 
+## Security headers
+
+A static export has no server in the request path, so `headers()` in
+`next.config.ts` does nothing — the site shipped with no CSP, no
+`X-Frame-Options` and no HSTS at all. `scripts/security-headers.mjs` writes
+`public/_headers`, which Cloudflare Pages applies to every response, and
+`prebuild` regenerates it so it cannot drift from the build it describes.
+
+It is generated rather than checked in because `connect-src` has to name the
+API exactly, and the API origin is a build-time variable. The script **fails
+the build** when `NEXT_PUBLIC_API_BASE_URL` is missing: the alternatives are a
+policy that blocks every API call, or one wide enough to let injected script
+exfiltrate anywhere, and neither is worth shipping quietly.
+
+`js.stripe.com` is already allowed in `script-src` and `frame-src`, and
+`payment=(self "https://js.stripe.com")` in `Permissions-Policy`, although
+nothing loads Stripe yet. Allowing an origin that is unused costs nothing;
+discovering in production that the policy blocks checkout does.
+
+If you host somewhere other than Cloudflare Pages, that file is the thing to
+port — Netlify reads the same format, most others do not.
+
 ### Two things the backend must be told
 
 Both are backend environment or configuration changes. Neither has a frontend

@@ -13,7 +13,7 @@
     "api:sync": "npm run api:pull && npm run api:types",
     "deploy": "next build && wrangler pages deploy out --project-name=${CF_PAGES_PROJECT:-raceos}",
     "assets:webp": "node scripts/png-to-webp.mjs",
-    "prebuild": "node scripts/asset-manifest.mjs"
+    "prebuild": "node scripts/asset-manifest.mjs && node scripts/security-headers.mjs"
   },
   "dependencies": {
     "@stripe/stripe-js": "^5.10.0",

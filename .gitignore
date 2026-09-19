@@ -42,3 +42,4 @@ next-env.d.ts
 
 # ...but the example is documentation and belongs in the repo.
 !.env.example
+public/_headers
