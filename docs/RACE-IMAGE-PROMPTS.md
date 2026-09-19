@@ -1,8 +1,16 @@
 # Race Photography — Generation Brief
 
-Every race in the catalogue except **Kalmar 70.3** (already shot and in place).
+Every race in the 2026 catalogue except **Kalmar 70.3** (already shot and in
+place). The seven September races this brief used to cover — Emilia-Romagna at
+both distances, Nice, Belgrade, Erkner, Wales and Weymouth — have been run and
+are out of the catalogue, so their prompts are gone with them.
 
-**Fifteen images. One base render per race.** Generate the base once, then let
+**Nothing here is blocking.** Every active race already has both images: they
+are cropped and sized from the ten-photograph library the removed races left
+behind, so a race can share a frame with another race that looks like it. This
+brief is what replaces a shared frame with a photograph of the race itself.
+
+**Eight images. One base render per race.** Generate the base once, then let
 Higgsfield GPT 2.5 (or equivalent) reframe it to the two delivery ratios. The
 prompts below are written so that a single frame survives both crops — subject
 in the centre, air at the edges, a deliberately quiet bottom-left.
@@ -23,10 +31,11 @@ invent much. Deliver:
 - Banner — `2560 × 1097` (21:9)
 - Thumbnail — `1200 × 900` (4:3)
 
-Both are then saved as **one file** at the path given for each race; the site
-serves the same asset to both slots and crops with `object-fit: cover`. If you
-would rather ship two files, the code already prefers `<slug>-hero.webp` for the
-banner when it exists — but one file is the intended, simpler path.
+**Ship two files, not one.** `<slug>.webp` is the thumbnail and
+`<slug>-hero.webp` the banner, and `lib/courseMedia.ts` looks for both by name.
+One file served to both slots meant the races index downloaded up to 939 KB of
+2336-pixel photograph to paint a 132-pixel-tall card. A hero still falls back to
+the thumbnail if it is missing, so a single file works — it is just wasteful.
 
 **Format: `.webp`, quality 82.** Drop the finished `.webp` straight into
 `public/assets/courses/`. Nothing else needs changing — the filename *is* the
@@ -48,7 +57,7 @@ a dark gradient. Every thumbnail is a centre crop. So each prompt asks for:
 
 ---
 
-## House style — applies to all fifteen
+## House style — applies to all eight
 
 Paste this into the tool once and keep it constant across the set. Consistency
 between the fifteen frames is worth more than any single frame being spectacular.
@@ -83,211 +92,7 @@ overlaid typography. Generous negative space. Horizon off-centre.
 
 ---
 
-# 1. Adriatic Flat — IRONMAN 70.3 Emilia-Romagna
-
-- **Path:** `public/assets/courses/italy-emilia-romagna-703.webp`
-- **Action:** **Replace**
-- **Banner:** 21:9 (2560 × 1097) · **Thumbnail:** 4:3 (1200 × 900)
-
-```
-HOUSE STYLE + :
-
-Cervia, Emilia-Romagna, Italy. Early morning on a flat Adriatic beach out of
-season. Wide, pale, hard-packed sand running to a glassy grey-blue sea with
-almost no swell. A long row of closed beach umbrellas and folded loungers
-recedes into haze on the right. Behind the beach, the dark horizontal band of
-an umbrella-pine forest. Two distant open-water swimmers in the mid-distance,
-small, barely more than silhouettes and wake.
-
-Flat light becoming warm as the sun clears the sea. The whole frame reads
-HORIZONTAL and LOW — this is a fast, flat, sea-level course and the picture
-should feel like it. No hills anywhere.
-
-One faded terracotta-orange marker buoy sits just off-centre. The lower-left
-third is open wet sand reflecting the sky — smooth, dark, empty.
-```
-
----
-
-# 2. The Long Romagna — IRONMAN Italy Emilia-Romagna
-
-- **Path:** `public/assets/courses/italy-emilia-romagna-full.webp`
-- **Action:** **Replace**
-- **Banner:** 21:9 (2560 × 1097) · **Thumbnail:** 4:3 (1200 × 900)
-
-```
-HOUSE STYLE + :
-
-Inland Romagna, Italy — the farmland behind Cervia. Late afternoon, an hour
-before sunset. A dead-straight secondary road runs from the lower centre of the
-frame to a vanishing point on the horizon, flanked by a long avenue of poplars
-casting hard parallel shadows across the tarmac. Flat cultivated fields either
-side, wheat and vine rows, an irrigation canal glinting along one edge, a lone
-stone farmhouse far off.
-
-A single cyclist in the distance, low on the bars, tiny against the road —
-unmistakably deep into a long day. Dust and pollen hanging in the low sun.
-
-This is the full-distance companion to the 70.3: same region, but the mood is
-DURATION — endless, warm, slightly emptied out. Heat haze on the far tarmac.
-
-A weathered orange-terracotta roof on the distant farmhouse carries the accent.
-The lower-left third is road surface in tree shadow — dark, even, textureless.
-```
-
----
-
-# 3. The Climb Above the Bay — IRONMAN 70.3 World Championship Nice
-
-- **Path:** `public/assets/courses/nice-703-world-championship.webp`
-- **Action:** **Replace**
-- **Banner:** 21:9 (2560 × 1097) · **Thumbnail:** 4:3 (1200 × 900)
-
-```
-HOUSE STYLE + :
-
-Nice, Côte d'Azur, France. Shot from high on a Maritime Alps switchback road,
-looking back and down over the Baie des Anges. Layered ridgelines of limestone
-and maquis falling away in receding blue-grey planes to a vast flat
-Mediterranean far below, the curve of the bay and the pale city just visible
-through morning haze at the horizon.
-
-The road enters bottom-right as a hairpin with a low stone guard wall and
-climbs across the frame. One cyclist, small, out of the saddle on the gradient.
-
-The feeling is ALTITUDE and CONSEQUENCE — this is the hardest bike course in
-the catalogue and the image should make a viewer's legs tighten. Vertical
-scale, thin clear air, the sea impossibly far below.
-
-Sun low and behind the ridges, rimlighting the rock edges; the valley still in
-blue shadow. A single orange-terracotta roof in the village below, or an orange
-road-marker post on the hairpin, for the accent.
-
-The lower-left third is shadowed hillside and scrub — dark, soft, no detail.
-```
-
----
-
-# 4. River City — IRONMAN 70.3 Belgrade
-
-- **Path:** `public/assets/courses/belgrade-703.webp`
-- **Action:** **Replace**
-- **Banner:** 21:9 (2560 × 1097) · **Thumbnail:** 4:3 (1200 × 900)
-
-```
-HOUSE STYLE + :
-
-Belgrade, Serbia. Sunrise over the Sava at Ada Ciganlija, looking downstream
-toward the confluence with the Danube. Broad, calm, slow river water filling
-the lower half of the frame, mirror-still, with mist lifting off it. On the far
-bank, the low silhouette of the city — a long bridge span, mid-rise blocks,
-the faint mass of the old fortress promontory in haze. Willows and poplars
-along the near shore.
-
-Flat, urban, riverine. Two open-water swimmers mid-river, distant, small.
-
-Early light is pink-grey turning warm; the water carries most of the colour.
-The bridge's steel or a mooring buoy gives the terracotta-orange accent.
-
-Keep the city small and set back — this reads as a big river with a city behind
-it, not a cityscape. The lower-left third is open, unbroken water in shadow.
-```
-
----
-
-# 5. Brandenburg Water — IRONMAN 70.3 Erkner
-
-- **Path:** `public/assets/courses/erkner-703.webp`
-- **Action:** **Create** *(no asset exists)*
-- **Banner:** 21:9 (2560 × 1097) · **Thumbnail:** 4:3 (1200 × 900)
-
-```
-HOUSE STYLE + :
-
-Erkner, Brandenburg, Germany — the lake country south-east of Berlin. Dawn on a
-glassy inland lake (Flakensee), water perfectly still and dark, holding a
-mirror reflection of a dense Scots-pine treeline. Thin ground mist drifting
-across the surface. A short wooden jetty enters from the right, weathered
-planks, nothing on it. Beyond the lake, flat forest to the horizon — no hills
-at all.
-
-Cool Northern European light, silvery and green-grey, with the first warmth
-just touching the pine crowns. Very quiet, very still, slightly severe.
-
-One swimmer entering the water from the jetty, distant and small, the only
-movement in the frame; a single ring of ripple.
-
-An orange buoy near the jetty, or an orange marker on a channel post, carries
-the accent. The lower-left third is flat black water — mirror-smooth, empty.
-```
-
----
-
-# 6. Pembrokeshire — IRONMAN Wales
-
-- **Path:** `public/assets/courses/ironman-wales.webp`
-- **Action:** **Replace**
-- **Banner:** 21:9 (2560 × 1097) · **Thumbnail:** 4:3 (1200 × 900)
-
-```
-HOUSE STYLE + :
-
-Tenby, Pembrokeshire, Wales. Storm-grey morning on the Atlantic coast. Tall
-dark cliffs on the right, wet and stratified, dropping to a broad tidal beach.
-Heavy cold sea, real swell, white water breaking along the sand. A stone
-harbour wall and a scatter of pastel terraced houses on the headland in the far
-mid-distance, small and weather-beaten. Sea fog sitting in the gap between
-headlands.
-
-This is the hardest, coldest race in the catalogue and the image must feel it:
-wind, grey Atlantic, spray in the air, low cloud pressing down. Bleak and
-beautiful, never pretty.
-
-Break the palette rule only far enough to let a thin band of warm light open on
-the horizon under the cloud — the whole frame's warmth comes from that one
-slot. A faded orange lifebuoy or a single orange-hulled boat in the harbour
-gives the accent.
-
-One or two wetsuited figures at the tideline, tiny, walking into the surf.
-
-The lower-left third is wet sand and receding foam under cliff shadow — dark,
-smooth, low contrast.
-```
-
----
-
-# 7. Jurassic Coast — IRONMAN 70.3 Weymouth
-
-- **Path:** `public/assets/courses/weymouth-703.webp`
-- **Action:** **Create** *(no asset exists)*
-- **Banner:** 21:9 (2560 × 1097) · **Thumbnail:** 4:3 (1200 × 900)
-
-```
-HOUSE STYLE + :
-
-Weymouth, Dorset, England. Late afternoon on the Jurassic Coast. Shot from a
-high grassy clifftop looking along the coastline: the immense shingle sweep of
-Chesil Beach curving away into haze, pale ivory-and-grey stone cliffs stepping
-down to a calm turquoise-grey Channel, and behind, soft rolling green Dorset
-downland stitched with hedgerows and field boundaries.
-
-Cooler and gentler than Wales — this is a rolling, exposed, honest course, not
-a brutal one. English light: bright but diffused, high cloud, shafts of sun
-moving across the fields.
-
-A narrow lane threads the downland in the mid-distance with a single distant
-cyclist on it, very small.
-
-The accent comes from a rust-orange patch of lichen on the cliff stone or a
-single terracotta rooftop in the village below.
-
-The lower-left third is clifftop grass in shadow — dark green-grey, soft, no
-sharp detail.
-```
-
----
-
-# 8. Maresme — IRONMAN Barcelona (Calella)
+# 1. Maresme — IRONMAN Barcelona (Calella)
 
 - **Path:** `public/assets/courses/calella-barcelona-full.webp`
 - **Action:** **Create** *(no asset exists)*
@@ -317,7 +122,7 @@ The lower-left third is road surface and palm shadow — dark, even, quiet.
 
 ---
 
-# 9. The Château — IRONMAN 70.3 Versailles
+# 2. The Château — IRONMAN 70.3 Versailles
 
 - **Path:** `public/assets/courses/versailles-703.webp`
 - **Action:** **Create** *(no asset exists)*
@@ -349,7 +154,7 @@ The lower-left third is gravel and hedge shadow — dark, matte, low detail.
 
 ---
 
-# 10. Atlantic Edge — IRONMAN 70.3 Cascais
+# 3. Atlantic Edge — IRONMAN 70.3 Cascais
 
 - **Path:** `public/assets/courses/portugal-cascais-703.webp`
 - **Action:** **Replace**
@@ -379,7 +184,7 @@ featureless.
 
 ---
 
-# 11. Serra de Sintra — IRONMAN Portugal Cascais
+# 4. Serra de Sintra — IRONMAN Portugal Cascais
 
 - **Path:** `public/assets/courses/portugal-cascais-full.webp`
 - **Action:** **Replace**
@@ -409,7 +214,7 @@ The lower-left third is dark woodland and road shadow — deep, soft, no detail.
 
 ---
 
-# 12. Montes de Málaga — IRONMAN 70.3 Málaga
+# 5. Montes de Málaga — IRONMAN 70.3 Málaga
 
 - **Path:** `public/assets/courses/malaga-703.webp`
 - **Action:** **Replace**
@@ -438,7 +243,7 @@ uncluttered.
 
 ---
 
-# 13. Istrian Stone — IRONMAN 70.3 Poreč
+# 6. Istrian Stone — IRONMAN 70.3 Poreč
 
 - **Path:** `public/assets/courses/porec-703.webp`
 - **Action:** **Replace**
@@ -470,7 +275,7 @@ smooth, quiet.
 
 ---
 
-# 14. Navarino Bay — IRONMAN 70.3 Costa Navarino
+# 7. Navarino Bay — IRONMAN 70.3 Costa Navarino
 
 - **Path:** `public/assets/courses/costa-navarino-703.webp`
 - **Action:** **Create** *(no asset exists)*
@@ -501,7 +306,7 @@ The lower-left third is wet sand in headland shadow — dark, reflective, empty.
 
 ---
 
-# 15. Taurus Coast — IRONMAN 70.3 Türkiye
+# 8. Taurus Coast — IRONMAN 70.3 Türkiye
 
 - **Path:** `public/assets/courses/turkiye-703.webp`
 - **Action:** **Create** *(no asset exists)*
@@ -535,22 +340,33 @@ The lower-left third is dark wet sand and still shallows — smooth, low contras
 
 ## Delivery checklist
 
-For each of the fifteen:
+For each of the eight:
 
 1. Generate base at **2560 × 1440**, house style block + race block, single render.
 2. Reframe to **2560 × 1097** (banner) — confirm the bottom-left stays quiet.
 3. Crop to **1200 × 900** (thumbnail) — confirm the identifying subject survives.
 4. Export **`.webp`, quality 82**.
-5. Save to `public/assets/courses/<slug>.webp`, exactly the filename listed.
-6. Commit. Nothing else to change — the site finds the file by name.
+5. Save the banner to `public/assets/courses/<slug>-hero.webp` and the
+   thumbnail to `public/assets/courses/<slug>.webp`, exactly those filenames.
+6. Commit. Nothing else to change — the site finds the files by name, and
+   `scripts/asset-manifest.mjs` picks them up on the next build.
 
-**Nine replace** an existing photograph: `italy-emilia-romagna-703`,
-`italy-emilia-romagna-full`, `nice-703-world-championship`, `belgrade-703`,
-`ironman-wales`, `portugal-cascais-703`, `portugal-cascais-full`, `malaga-703`,
-`porec-703`.
+**All eight replace a shared frame.** Nothing is missing today, so there is no
+rush and no gap on the site while this is shot. What each one replaces:
 
-**Six create** a race that currently has no artwork at all: `erkner-703`,
-`weymouth-703`, `calella-barcelona-full`, `versailles-703`,
-`costa-navarino-703`, `turkiye-703`.
+| Race | Banner today | Thumbnail today |
+|---|---|---|
+| `calella-barcelona-full` | Nice finish chute | Adriatic seafront run |
+| `versailles-703` | inland swim start | open-water swimmer |
+| `portugal-cascais-703` | hairpin panorama | golden-hour coast road |
+| `portugal-cascais-full` | golden-hour coast road | hairpin panorama |
+| `malaga-703` | limestone cliffs | rock arch |
+| `porec-703` | Adriatic seafront run | open-water swimmer |
+| `costa-navarino-703` | rock arch | Nice finish chute |
+| `turkiye-703` | flat coast road | Adriatic swim exit |
 
-**Kalmar 70.3 is excluded** — `kalmar-703.webp` stays as it is.
+Three frames each serve two races — the swimmer, the arch and the chute — which
+is the sharing this brief exists to end.
+
+**Kalmar 70.3 is excluded.** It is the signed-out showcase and its art stays as
+it is: `kalmar-703.webp` and `kalmar-703-hero.webp`.
