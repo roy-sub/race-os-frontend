@@ -19,21 +19,24 @@ function normalise(raw: string): string {
 }
 
 /**
- * The public origin.
+ * The public origin: `https://raceosapp.com`, where the site is served.
  *
- * Defaults to the production domain rather than throwing, because unlike the
- * API base URL a wrong value here is recoverable and a missing one would break
- * every build. `raceos.cc` is the domain the site already puts in front of
- * people (it is the contact address in the footer and on the pricing page), so
- * it is the honest default.
+ * Defaults to it rather than throwing, because unlike the API base URL a
+ * missing value here would break every build for no good reason.
+ *
+ * **Not `raceos.cc`.** That is the contact address in the footer and on the
+ * pricing page, and an email domain is not a web domain — an earlier version
+ * of this file inferred one from the other and was wrong. A canonical tag
+ * naming a host the pages are not served from tells Google the real page
+ * lives somewhere else, so the pages you want ranked are suppressed rather
+ * than moved. If the two domains ever do converge, this constant and the
+ * `mailto:` links are separate decisions.
  *
  * Set `NEXT_PUBLIC_SITE_URL` when building for anywhere else — a preview
- * deploy, or a rename. A canonical tag naming the wrong host tells Google the
- * real page lives somewhere else, and the page you wanted ranked disappears
- * instead of moving.
+ * deploy, or a rename.
  */
 export const SITE_URL = normalise(
-  process.env.NEXT_PUBLIC_SITE_URL || "https://raceos.cc",
+  process.env.NEXT_PUBLIC_SITE_URL || "https://raceosapp.com",
 );
 
 export const SITE_NAME = "RaceOS";

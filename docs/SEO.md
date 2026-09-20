@@ -24,7 +24,7 @@ correct and complete.
 | --- | --- | --- |
 | `robots.txt` | `app/robots.ts` | Tells crawlers which parts of the site to read and which to skip. |
 | `sitemap.xml` | `app/sitemap.ts` | Lists all 15 public addresses so Google does not have to guess. |
-| One official address | `lib/seo/site.ts` | Every link the site publishes about itself points at `https://raceos.cc`. |
+| One official address | `lib/seo/site.ts` | Every link the site publishes about itself points at `https://raceosapp.com`. |
 | Canonical tags | `lib/seo/pageMetadata.ts` | Each page states its own real address, so two addresses for one page never compete. |
 | Unique titles and descriptions | one `layout.tsx` per route | What people actually read in a search result. All 32 pages are now distinct. |
 | Share image | `public/assets/og/raceos-share.png` | The preview card when a link is pasted into WhatsApp, Slack or X. |
@@ -57,19 +57,24 @@ each. You need nothing from a developer.
 
 ### Step 1 — Confirm the domain
 
-The site's official address is set to **`https://raceos.cc`**. If that is the
-domain you own and have connected to Cloudflare Pages, there is nothing to do.
+The site's official address is set to **`https://raceosapp.com`**, which is
+where the site is served. Nothing to do unless that changes.
 
-If you use a different domain, that single fact has to change in one place —
-tell whoever maintains the code to set the build variable
-`NEXT_PUBLIC_SITE_URL` to your real address, or change the default in
-`lib/seo/site.ts`. Getting this wrong is quiet and expensive: every page would
-tell Google that the real version lives at an address that does not exist.
+Note that this is deliberately *not* `raceos.cc`, the contact address in the
+footer. An email domain and a web domain are separate things, and an earlier
+version of this setup inferred one from the other and got it wrong. If you ever
+do move the site to `raceos.cc`, it is one build variable —
+`NEXT_PUBLIC_SITE_URL` — or the default in `lib/seo/site.ts`, plus a new
+Search Console property (Step 2) and a fresh sitemap submission (Step 4).
+
+Getting this wrong is quiet and expensive: every page would tell Google that
+the real version lives at an address that does not serve it, and the pages you
+want ranked get suppressed rather than moved.
 
 Also decide **with or without `www.`** and stick to it. In Cloudflare, under
 your Pages project → **Custom domains**, add both and set one to redirect to
-the other. Google treats `www.raceos.cc` and `raceos.cc` as two different sites
-otherwise, and they compete with each other.
+the other. Google treats `www.raceosapp.com` and `raceosapp.com` as two
+different sites otherwise, and they compete with each other.
 
 ### Step 2 — Create a Google Search Console account
 
@@ -81,7 +86,7 @@ broken.
    Google account.
 2. Choose **Add property** → **Domain** (the left-hand option, not URL prefix).
    The Domain option covers `www`, non-`www` and both `http`/`https` at once.
-3. Enter `raceos.cc` — just the domain, no `https://`.
+3. Enter `raceosapp.com` — just the domain, no `https://`.
 
 ### Step 3 — Prove you own the domain
 
@@ -119,11 +124,11 @@ a handful of pages.
 2. Click **Request indexing**.
 3. Do this for these five, which is the daily limit's worth of the ones that
    matter:
-   - `https://raceos.cc/`
-   - `https://raceos.cc/races/`
-   - `https://raceos.cc/pricing/`
-   - `https://raceos.cc/how-it-works/`
-   - `https://raceos.cc/races/malaga-703/`
+   - `https://raceosapp.com/`
+   - `https://raceosapp.com/races/`
+   - `https://raceosapp.com/pricing/`
+   - `https://raceosapp.com/how-it-works/`
+   - `https://raceosapp.com/races/malaga-703/`
 
 The race pages link to each other, so Google will find the remaining seven on
 its own from that one.
@@ -222,7 +227,7 @@ npx wrangler pages deploy out --project-name=raceos
 ```
 
 `NEXT_PUBLIC_SITE_URL` is only needed if you are building for a domain other
-than `raceos.cc`.
+than `raceosapp.com`.
 
 ---
 
