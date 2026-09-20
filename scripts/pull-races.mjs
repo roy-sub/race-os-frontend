@@ -21,6 +21,10 @@ import { writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { loadEnv } from "./load-env.mjs";
+
+loadEnv();
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "lib", "seo", "races.ts");
 

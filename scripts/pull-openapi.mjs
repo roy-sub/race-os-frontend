@@ -14,6 +14,10 @@
 
 import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+
+import { loadEnv } from "./load-env.mjs";
+
+loadEnv();
 import { dirname, join } from "node:path";
 
 const base =

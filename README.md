@@ -18,6 +18,13 @@ npm run dev                    # http://localhost:3000
 `NEXT_PUBLIC_API_BASE_URL` is asserted at import time. A missing value fails
 loudly rather than firing every request at a relative path.
 
+A `.env.local` is enough for `npm run build` as well as `npm run dev`. The
+`prebuild` scripts run outside Next, which does its own `.env` loading, so they
+read the same files through `scripts/load-env.mjs` — otherwise the build would
+refuse a variable that was sitting in `.env.local` the whole time. A real
+environment variable still wins over the file, so `FOO=bar npm run build` and
+CI behave as you would expect.
+
 ---
 
 ## The API contract

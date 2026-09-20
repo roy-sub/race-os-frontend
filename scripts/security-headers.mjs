@@ -21,6 +21,12 @@ import { writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { loadEnv } from "./load-env.mjs";
+
+/* `next build` reads .env.local itself; this script runs before it and would
+   otherwise see only the real environment. */
+const envFiles = loadEnv();
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "public", "_headers");
 
@@ -36,7 +42,13 @@ if (!apiOrigin) {
   // one so wide it protects nothing.
   console.error(
     "security-headers: NEXT_PUBLIC_API_BASE_URL is missing or not a URL.\n" +
-      "It is required to write connect-src. Set it for the build.",
+      "It is required to write connect-src.\n\n" +
+      "Set it for the build:\n" +
+      "  NEXT_PUBLIC_API_BASE_URL=https://your-api.example npm run build\n" +
+      "or put it in .env.local (copy .env.example), which is now read here too.\n" +
+      (envFiles.length
+        ? `Read ${envFiles.join(", ")}, and it was not in there.`
+        : "No .env.local or .env was found in the project root."),
   );
   process.exit(1);
 }
