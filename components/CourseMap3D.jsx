@@ -89,7 +89,14 @@ export default function CourseMap3D({
      frame — or a whole venue — behind. */
   const [scene, setScene] = useState(EMPTY_SCENE);
   const [mode, setMode] = useState('All');
-  const [hand, setHand] = useState(true);
+  /* The map orbits on load.
+     `hand` is the manual-drag state, and `controls.autoRotate` is
+     `!hand && autoOrbit` — so starting it true meant the card sat still until
+     someone found the button. A course you have not seen before reads as a
+     static picture that way; turning gives you the third dimension for free,
+     which is the whole point of rendering it in 3D. One click still hands
+     control back, exactly as before. */
+  const [hand, setHand] = useState(false);
   const [hover, setHover] = useState(null);
   const [pinned, setPinned] = useState(null);
   const [hoverFlag, setHoverFlag] = useState(null);
@@ -123,6 +130,11 @@ export default function CourseMap3D({
   useEffect(() => { engineRef.current?.setRelief(relief); }, [relief]);
   useEffect(() => { engineRef.current?.setContours(contours); }, [contours]);
   useEffect(() => { engineRef.current?.setAutoOrbit(autoOrbit); }, [autoOrbit]);
+  /* The engine constructor takes no `hand`, so it always builds with its own
+     default. Syncing it here the way relief and contours are synced is what
+     makes the initial state above actually reach OrbitControls — and it keeps
+     the two in step when a new venue rebuilds the engine mid-session. */
+  useEffect(() => { engineRef.current?.setHand(hand); }, [hand]);
 
   const { markers, flagPts } = scene;
 
@@ -148,11 +160,17 @@ export default function CourseMap3D({
   }
 
   const stat = venue.stats?.[mode] ?? venue.stats?.All ?? { label: '', dist: '—', gain: '—', gainLabel: '', split: '—', splitLabel: '' };
+  /* The button reports the mode the map is in, not the one a click would give
+     you. It used to read ROTATING, lit, while `autoRotate` was false and the
+     map was motionless — the label described the drag affordance and everyone
+     read it as the state. Orbiting is the lit state because orbiting is the
+     one that is doing something. */
+  const orbiting = !hand;
   const stageCursor = hand ? 'grab' : 'crosshair';
-  const handBg = hand ? 'rgba(232,85,42,.12)' : '#FFFFFF';
-  const handFg = hand ? '#C6421C' : '#6E6459';
-  const handBorder = hand ? 'rgba(232,85,42,.35)' : 'rgba(23,19,15,.08)';
-  const handLabel = hand ? 'ROTATING' : 'HAND';
+  const handBg = orbiting ? 'rgba(232,85,42,.12)' : '#FFFFFF';
+  const handFg = orbiting ? '#C6421C' : '#6E6459';
+  const handBorder = orbiting ? 'rgba(232,85,42,.35)' : 'rgba(23,19,15,.08)';
+  const handLabel = orbiting ? 'ROTATING' : 'HAND';
 
   return (
     <div
