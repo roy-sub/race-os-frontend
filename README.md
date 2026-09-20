@@ -114,17 +114,25 @@ components alone.
 npm ci
 NEXT_PUBLIC_API_BASE_URL=https://race-os-backend.onrender.com \
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...                \
+NEXT_PUBLIC_SITE_URL=https://raceos.cc                        \
   npm run build
 
 npx wrangler pages deploy out --project-name=raceos
 ```
 
-Or `npm run deploy`, which runs the same two steps and reads both variables from
+Or `npm run deploy`, which runs the same two steps and reads the variables from
 the environment.
 
 If you would rather Cloudflare build it, point a Pages project at this repo with
-build command `npm run build`, output directory `out`, and set the same two
+build command `npm run build`, output directory `out`, and set the same
 variables in the project's build environment.
+
+`NEXT_PUBLIC_SITE_URL` is the site's own address, and it is baked into every
+canonical tag, the sitemap and every share card. It defaults to
+`https://raceos.cc`, so a production build needs nothing; set it when building
+for a preview domain, or the preview will tell Google its pages are the
+canonical ones. See [docs/SEO.md](docs/SEO.md) for what else a deploy has to
+keep in step.
 
 ## Security headers
 

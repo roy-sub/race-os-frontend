@@ -11,6 +11,7 @@
     "api:pull": "node scripts/pull-openapi.mjs",
     "api:types": "openapi-typescript openapi/openapi.json -o lib/api/schema.d.ts",
     "api:sync": "npm run api:pull && npm run api:types",
+    "seo:races": "node scripts/pull-races.mjs",
     "deploy": "next build && wrangler pages deploy out --project-name=${CF_PAGES_PROJECT:-raceos}",
     "assets:webp": "node scripts/png-to-webp.mjs",
     "prebuild": "node scripts/asset-manifest.mjs && node scripts/security-headers.mjs"

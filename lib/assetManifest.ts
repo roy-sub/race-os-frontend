@@ -50,6 +50,7 @@ export const ASSET_FILES: ReadonlySet<string> = new Set([
   "assets/hero/hero-loop.webm",
   "assets/how/dawn-start.webp",
   "assets/how/solver-desk.webp",
+  "assets/og/raceos-share.png",
   "assets/plan/review-locked.webp",
   "assets/system/lost-road.webp",
 ]);
